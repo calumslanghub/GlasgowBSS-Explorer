@@ -97,7 +97,7 @@ def corridor_rows(
         lookup: Output of ``commuter_lookup``.
 
     Returns:
-        Rows with added ``commuter`` (``"commuter" | "leisure" | "unclassified"``)
+        Rows with added ``commuter`` (``"commuter" | "non-commuter" | "unclassified"``)
         and ``exp_any`` .. ``exp_mixed`` as percentages (1 dp).
     """
     exp = exposure.set_index(["origin", "destination"])
@@ -107,7 +107,7 @@ def corridor_rows(
         row = dict(r)
         flag = label_pair(o, d, lookup)
         row["commuter"] = (
-            "unclassified" if flag is None else ("commuter" if flag else "leisure")
+            "unclassified" if flag is None else ("commuter" if flag else "non-commuter")
         )
         for t in EXPOSURE_TYPES:
             col = f"exp_{t}"
@@ -151,7 +151,7 @@ def undirected_corridors(
         }
         flag = label_pair(station, r.partner, lookup)
         row["commuter"] = (
-            "unclassified" if flag is None else ("commuter" if flag else "leisure")
+            "unclassified" if flag is None else ("commuter" if flag else "non-commuter")
         )
         for c in cols:
             row[c] = round(float(getattr(r, c)) / r.trips * 100, 1) if r.trips else 0.0

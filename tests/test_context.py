@@ -57,7 +57,7 @@ def test_corridor_rows_enrich(od: pd.DataFrame, panel: pd.DataFrame, labels: pd.
         "A", "out", exp, lk,
     )
     assert rows[0]["commuter"] == "commuter" and rows[0]["exp_any"] == 25.0
-    assert rows[1]["commuter"] == "leisure" and rows[1]["exp_lane"] == 100.0
+    assert rows[1]["commuter"] == "non-commuter" and rows[1]["exp_lane"] == 100.0
     # Inbound rows are keyed (partner -> station).
     rows_in = context.corridor_rows([{"station": "D", "trips": 10, "share": 100.0}], "A", "in", exp, lk)
     assert rows_in[0]["commuter"] == "unclassified" and rows_in[0]["exp_any"] == 0.0

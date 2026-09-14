@@ -10,9 +10,10 @@ aggregated outputs of an MSc dissertation; no raw trip data is shipped.
 
 | Tab | Phase | Content |
 |---|---|---|
-| Station flows | 1 | Click a station: top 10 destinations, top 10 origins, routes drawn along the shortest bike-network path (OSMnx), and the origin-vs-destination split by hour (06:00 to 23:00). |
+| Station flows | 1 | Click a station: top 10 destinations, top 10 origins, routes drawn along the shortest bike-network path (OSMnx), and the origin-vs-destination split by hour (06:00 to 23:00). Press play for a *standard day*: markers grow with that hour's trips and shade from red (mostly ending there) to blue (mostly starting there). |
 | Infrastructure timeline | 2 | A date slider (with play) that reveals cycle infrastructure as it opened, and docking stations as they recorded their first trip. Chart of km open by type. |
-| Corridors & context | 3 | The station's busiest corridors coloured by the dissertation's k-means commuter label, how much of each route runs on cycle infrastructure, and the 250 m census-buffer neighbourhood profile. |
+| Corridors & context | 3 | City-wide flow map: every classified station pair routed on the bike network, with street width = trips on that street, toggled by commuter / non-commuter label. Click a station for its busiest corridors, route exposure to cycle infrastructure and the 250 m census-buffer neighbourhood profile. |
+| Segregated infrastructure | 4 | Only segregated segments, drawn with width = trips whose route followed them (within 15 m for at least 30 m), a ranked list of the most-used streets, and a switch to commuter-corridor trips only. |
 
 ## How it is built
 
@@ -68,9 +69,17 @@ then visit http://localhost:8000.
 
 ## Deploying
 
-Commit `web/data/*.json` (they are the site's database) and publish the `web/`
-folder with GitHub Pages, Netlify or Cloudflare Pages. No server, no build step
-for the JS.
+`web/data/*.json` are committed (they are the site's database), so the `web/`
+folder is a complete static site. It deploys to GitHub Pages via
+`.github/workflows/deploy.yml`, which publishes the `web/` folder on every push
+to `main`. In the repo's **Settings -> Pages**, set **Source: GitHub Actions**
+(the workflow does the rest). Note the native "deploy from a branch" option
+cannot target a `web/` subfolder -- only the repo root or `/docs` -- which is why
+the Actions workflow is used.
+
+Once deployed the site lives at `https://<user>.github.io/<repo>/`; add that URL
+to the **Live site** line near the top of this README. Netlify or Cloudflare
+Pages also work -- set the publish directory to `web/` with no build command.
 
 ## Data notes
 
@@ -84,3 +93,6 @@ for the JS.
   unordered station pairs; pairs with too few trips are "unclassified".
 - Route exposure is the share of a pair's shortest bike route within 15 m of
   infrastructure, trip-weighted across the dissertation's exposure regimes.
+- The corridor flow map and segregated-usage counts route all 11,052 directed
+  OD pairs on the cached OSMnx bike graph (about a minute on 8 cores) and use
+  the latest infrastructure network, not the dated regimes.

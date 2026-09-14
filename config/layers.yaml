@@ -13,8 +13,10 @@
 #           marker (name of a state value to draw a vertical guide at).
 #   kpi   - stat tiles / key-value grid. meta: items [{key,label,unit,dp}].
 #
-# `scope: station` layers are looked up by S.station in the named file;
-# `scope: global` layers read the file's top-level object.
+# Data lookup:
+#   scope: station  -> files[file][S.station][field]   (needs a selection)
+#   scope: global   -> files[file][field]
+#   field_from_state: <state key> -> files[file][S[<state key>]] (e.g. seg_mode)
 
 layers:
   # ── Phase 1: station flows ────────────────────────────────────────────────
@@ -58,6 +60,7 @@ layers:
     subtitle: "Share of trips starting (blue) vs ending (red) here, 06:00-23:00"
     x_key: hour
     x_suffix: ":00"
+    marker: hour
     series:
       - { key: out, label: "Origin (trips start here)", colour: "$roles.origin" }
       - { key: in, label: "Destination (trips end here)", colour: "$roles.destination" }
@@ -108,6 +111,31 @@ layers:
       - { key: stations, label: "Stations live", dp: 0 }
 
   # ── Phase 3: corridors & context ──────────────────────────────────────────
+  corridor_network_kpi:
+    file: corridor_network.json
+    scope: global
+    render: kpi
+    title: "Corridors across the network"
+    subtitle: "k-means label of each station pair (pre-COVID, pairs with 30+ trips)"
+    items:
+      - { key: commuter_pct, label: "Trips on commuter corridors", unit: "%", dp: 1, colour: "$corridor.commuter" }
+      - { key: noncommuter_pct, label: "Trips on non-commuter corridors", unit: "%", dp: 1, colour: "$corridor.non-commuter" }
+      - { key: commuter_pairs, label: "Commuter pairs", dp: 0 }
+      - { key: noncommuter_pairs, label: "Non-commuter pairs", dp: 0 }
+      - { key: unclassified_pct, label: "Trips on unclassified pairs", unit: "%", dp: 1, colour: "$corridor.unclassified" }
+      - { key: unclassified_pairs, label: "Unclassified pairs", dp: 0 }
+
+  commuter_kpi:
+    file: context_by_station.json
+    scope: station
+    render: kpi
+    title: "Commuter character"
+    items:
+      - { key: commuter_pct, label: "Trips on commuter corridors", unit: "%", dp: 1, colour: "$corridor.commuter" }
+      - { key: classified_pct, label: "Trips on classified pairs", unit: "%", dp: 1 }
+      - { key: commuter_pairs, label: "Commuter partners", dp: 0 }
+      - { key: exp_any, label: "Route on infrastructure", unit: "%", dp: 1, colour: "$infra.lane" }
+
   corridor_top:
     file: context_by_station.json
     scope: station
@@ -152,17 +180,6 @@ layers:
       - { key: shared, label: "Shared path/footway", colour: "$infra.shared" }
       - { key: mixed, label: "Mixed traffic", colour: "$infra.mixed" }
 
-  commuter_kpi:
-    file: context_by_station.json
-    scope: station
-    render: kpi
-    title: "Commuter character"
-    items:
-      - { key: commuter_pct, label: "Trips on commuter corridors", unit: "%", dp: 1, colour: "$corridor.commuter" }
-      - { key: classified_pct, label: "Trips on classified pairs", unit: "%", dp: 1 }
-      - { key: commuter_pairs, label: "Commuter partners", dp: 0 }
-      - { key: exp_any, label: "Route on infrastructure", unit: "%", dp: 1, colour: "$infra.lane" }
-
   station_profile:
     file: context_by_station.json
     scope: station
@@ -182,23 +199,66 @@ layers:
       - { key: n_on_premises, label: "Licensed premises", dp: 0 }
       - { key: premises_capacity, label: "Premises capacity", dp: 0 }
 
-# Views are the side-panel tabs. Each lists layers in display order and says
-# what the map should overlay while the tab is active.
+  # ── Phase 4: segregated infrastructure ────────────────────────────────────
+  segregated_kpi:
+    file: segregated_summary.json
+    scope: global
+    field_from_state: seg_mode
+    render: kpi
+    title: "Trips that followed segregated infrastructure"
+    subtitle: "Route within 15 m of a segregated segment for 30 m or more"
+    items:
+      - { key: share_pct, label: "Share of trips", unit: "%", dp: 1, colour: "$infra.segregated" }
+      - { key: trips_on, label: "Trips", dp: 0 }
+      - { key: pairs_on, label: "Station pairs", dp: 0 }
+      - { key: trips_total, label: "Of all trips considered", dp: 0 }
+
+  segregated_top:
+    file: segregated_summary.json
+    scope: global
+    field_from_state: seg_mode
+    field: top
+    render: bar
+    orientation: horizontal
+    title: "Most-used segregated routes"
+    subtitle: "Trips whose route followed the street or scheme"
+    label_key: name
+    value_key: trips
+    colour: "$infra.segregated"
+
+# Views are the side-panel tabs. Each lists layers in display order (global
+# layers always render; station layers only once a station is selected) and
+# says what the map should overlay while the tab is active.
+#   map.stations: sized (radius by trips) | dots (uniform)
+#   map.timeline: none | dates (phase 2 slider) | hours (standard-day player)
+#   map.infra:    none | all | timeline | segregated
+#   map.loads:    none | corridor (city-wide flow map when no station selected)
+#   legend:       ordered legend groups; every entry is a show/hide toggle
 views:
   flows:
     title: "Station flows"
     phase: 1
     layers: [od_split_kpi, od_top_destinations, od_top_origins, od_hourly_split]
-    map: { lines: [od_top_destinations, od_top_origins], infra: none, timeline: false }
+    map: { lines: [od_top_destinations, od_top_origins], infra: none, loads: none, timeline: hours, stations: sized }
+    legend: [lines, stations]
 
   timeline:
     title: "Infrastructure timeline"
     phase: 2
     layers: [infra_state_kpi, infra_km_timeline]
-    map: { lines: [], infra: timeline, timeline: true }
+    map: { lines: [], infra: timeline, loads: none, timeline: dates, stations: dots }
+    legend: [infra, stations]
 
   corridors:
     title: "Corridors & context"
     phase: 3
-    layers: [commuter_kpi, corridor_top, corridor_exposure, station_exposure, station_profile]
-    map: { lines: [corridor_top], infra: all, timeline: false }
+    layers: [corridor_network_kpi, commuter_kpi, corridor_top, corridor_exposure, station_exposure, station_profile]
+    map: { lines: [corridor_top], infra: none, loads: corridor, timeline: none, stations: dots }
+    legend: [corridor, stations]
+
+  segregated:
+    title: "Segregated infrastructure"
+    phase: 4
+    layers: [segregated_kpi, segregated_top, station_exposure]
+    map: { lines: [], infra: segregated, loads: none, timeline: none, stations: dots }
+    legend: [segmode, stations]

@@ -15,6 +15,10 @@ REQUIRED = [
     "infra.geojson",
     "infra_timeline.json",
     "context_by_station.json",
+    "corridor_network.json",
+    "corridor_load.geojson",
+    "segregated.geojson",
+    "segregated_summary.json",
 ]
 
 pytestmark = pytest.mark.skipif(
@@ -82,6 +86,34 @@ def test_infra_geojson_and_timeline() -> None:
         assert len(tl[key]) == n
         assert all(b >= a for a, b in zip(tl[key], tl[key][1:])), f"{key} not monotone"
     assert tl["dates"][0] == "2017-09-15" and tl["dates"][-1] == "2024-04-01"
+
+
+def test_corridor_labels_and_loads() -> None:
+    ctx = load("context_by_station.json")
+    labels = {r["commuter"] for e in ctx.values() for r in e["corridors"]}
+    assert labels <= {"commuter", "non-commuter", "unclassified"}
+    assert "leisure" not in labels
+    net = load("corridor_network.json")
+    assert net["commuter_pct"] + net["noncommuter_pct"] + net["unclassified_pct"] == pytest.approx(100, abs=0.2)
+    fc = load("corridor_load.geojson")
+    assert fc["features"] and set(fc["max"]) == {"c", "n", "u"}
+    for f in fc["features"][:50]:
+        p = f["properties"]
+        assert p["c"] >= 0 and p["n"] >= 0 and p["u"] >= 0 and p["c"] + p["n"] + p["u"] >= 10
+
+
+def test_segregated_usage() -> None:
+    fc = load("segregated.geojson")
+    assert len(fc["features"]) > 100
+    for f in fc["features"]:
+        p = f["properties"]
+        assert p["t"] == p["c"] + p["n"] + (p["t"] - p["c"] - p["n"]) and p["t"] >= p["c"]
+    s = load("segregated_summary.json")
+    for mode in ("all", "commuter"):
+        assert 0 <= s[mode]["share_pct"] <= 100
+        assert s[mode]["trips_on"] <= s[mode]["trips_total"]
+        assert s[mode]["top"] and s[mode]["top"][0]["trips"] >= s[mode]["top"][-1]["trips"]
+    assert s["commuter"]["trips_total"] < s["all"]["trips_total"]
 
 
 def test_manifest_layers_reference_existing_files_and_fields() -> None:

@@ -8,9 +8,15 @@
 
 var S = {
   view: 'flows',        // active tab (manifest views key)
-  station: null,        // selected station id
+  station: null,        // selected station id (null = none)
   date: null,           // timeline date (ISO) — phase 2
-  lines: { origin: true, destination: true }   // phase 1 line toggles
+  hour: null,           // standard-day hour (6-23) — phase 1; null = all-day
+  seg_mode: 'all',      // 'all' | 'commuter' — phase 4
+  show: {               // legend toggles
+    origin: true, destination: true, stations: true,
+    infra: { segregated: true, lane: true, shared: true, mixed: true },
+    corridor: { commuter: true, 'non-commuter': true, unclassified: false }
+  }
 };
 
 var PANELS = [];        // live renderer handles for the current view
@@ -21,13 +27,14 @@ function init() {
     initMap();
     initTimeline();
     buildStationSelect();
-    wireLineToggle();
-    var first = stations().slice().sort(function (a, b) { return b.trips - a.trips; })[0];
     var h = readHash();
-    if (h.date && TL.dates.indexOf(h.date) >= 0) setDate(h.date, true);
+    if (h.date && TL_MODES.dates.values().indexOf(h.date) >= 0) S.date = h.date;
+    var wanted = h.station && stationById(h.station) ? h.station : null;
+    S.station = wanted;
+    if (h.seg === 'commuter') S.seg_mode = 'commuter';
     setView(h.view && DATA.manifest.views[h.view] ? h.view : S.view);
-    var wanted = h.station && stations().some(function (s) { return s.id === h.station; }) ? h.station : (first && first.id);
-    if (wanted) selectStation(wanted);
+    if (S.view === 'flows' && h.hour !== null && h.hour >= 6 && h.hour <= 23) setPosition(h.hour - 6);
+    if (wanted) focusStation(wanted);
     window.addEventListener('hashchange', onHashChange);
   }).catch(function (err) {
     document.getElementById('panel-body').innerHTML = '<div class="card-empty">Could not load data: ' + err.message + '</div>';
@@ -35,18 +42,9 @@ function init() {
   });
 }
 
-// ── Header: summary tiles + view tabs ─────────────────────────────────────────
+// ── Header: view tabs ─────────────────────────────────────────────────────────
 function buildHeader() {
   var s = DATA.manifest.summary;
-  var tiles = document.getElementById('summary-tiles');
-  [
-    [fmtNum(s.trips), 'trips'],
-    [fmtNum(s.stations), 'stations'],
-    [fmtNum(s.infra_km, 0, ' km'), 'cycle infra'],
-    [fmtNum(s.commuter_pct, 0, '%'), 'commuter trips'],
-    [fmtNum(s.exp_any_pct, 0, '%'), 'route on infra']
-  ].forEach(function (t) { tiles.appendChild(el('div', 'sum-tile', '<b>' + t[0] + '</b><span>' + t[1] + '</span>')); });
-
   var tabs = document.getElementById('view-tabs');
   Object.keys(DATA.manifest.views).forEach(function (key) {
     var v = DATA.manifest.views[key];
@@ -55,8 +53,7 @@ function buildHeader() {
     b.addEventListener('click', function () { setView(key); });
     tabs.appendChild(b);
   });
-  var foot = document.getElementById('foot-text');
-  foot.innerHTML = 'Trips ' + fmtDate(s.date_start) + ' to ' + fmtDate(s.date_end) + ' · routes: ' +
+  document.getElementById('foot-text').innerHTML = 'Trips ' + fmtDate(s.date_start) + ' to ' + fmtDate(s.date_end) + ' · routes: ' +
     (s.router === 'osmnx' ? 'shortest bike-network path (OSMnx)' : 'straight lines') +
     ' · MSc dissertation, University of Glasgow.';
 }
@@ -64,30 +61,21 @@ function buildHeader() {
 function buildStationSelect() {
   var sel = document.getElementById('station-select');
   clear(sel);
-  var ph = el('option', '', 'Select a station…'); ph.value = ''; sel.appendChild(ph);
+  var ph = el('option', '', 'All stations (none selected)'); ph.value = ''; sel.appendChild(ph);
   stations().slice().sort(function (a, b) { return a.id.localeCompare(b.id); }).forEach(function (s) {
     var o = el('option', '', s.id + ' (' + fmtNum(s.trips) + ')'); o.value = s.id; sel.appendChild(o);
   });
-  sel.addEventListener('change', function () { if (sel.value) selectStation(sel.value); });
-}
-
-function wireLineToggle() {
-  var cols = DATA.manifest.colours.roles;
-  document.querySelectorAll('#line-toggle button').forEach(function (b) {
-    var role = b.dataset.lines;
-    b.insertAdjacentHTML('afterbegin', '<i class="swatch" style="background:' + cols[role] + '"></i>');
-    b.addEventListener('click', function () {
-      S.lines[role] = !S.lines[role];
-      b.classList.toggle('active', S.lines[role]);
-      drawLines();
-    });
-  });
+  sel.addEventListener('change', function () { selectStation(sel.value || null); });
 }
 
 // ── URL hash (shareable links: #view=timeline&station=...&date=...) ──────────
 function readHash() {
   var p = new URLSearchParams(location.hash.replace(/^#/, ''));
-  return { view: p.get('view'), station: p.get('station'), date: p.get('date') };
+  var hour = p.get('hour');
+  return {
+    view: p.get('view'), station: p.get('station'), date: p.get('date'),
+    hour: hour !== null && hour !== '' ? +hour : null, seg: p.get('seg')
+  };
 }
 
 function writeHash() {
@@ -95,6 +83,8 @@ function writeHash() {
   p.set('view', S.view);
   if (S.station) p.set('station', S.station);
   if (S.view === 'timeline' && S.date) p.set('date', S.date);
+  if (S.view === 'flows' && S.hour !== null) p.set('hour', S.hour);
+  if (S.view === 'segregated' && S.seg_mode !== 'all') p.set('seg', S.seg_mode);
   var next = '#' + p.toString();
   if (location.hash !== next) history.replaceState(null, '', next);
 }
@@ -102,7 +92,8 @@ function writeHash() {
 function onHashChange() {
   var h = readHash();
   if (h.view && h.view !== S.view && DATA.manifest.views[h.view]) setView(h.view);
-  if (h.station && h.station !== S.station && stations().some(function (s) { return s.id === h.station; })) selectStation(h.station);
+  var st = h.station && stationById(h.station) ? h.station : null;
+  if (st !== S.station) selectStation(st);
 }
 
 // ── State transitions ─────────────────────────────────────────────────────────
@@ -110,25 +101,30 @@ function setView(key) {
   S.view = key;
   document.querySelectorAll('.view-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.view === key); });
   var view = DATA.manifest.views[key];
-  document.getElementById('timeline').hidden = !view.map.timeline;
-  if (!view.map.timeline && TL.timer) stopPlay();
+  setTimelineMode(view.map.timeline || 'none');
   renderPanels();
   updateMap();
   writeHash();
 }
 
+// id = null clears the selection everywhere (panels, lines, marker highlight).
 function selectStation(id) {
-  S.station = id;
-  document.getElementById('station-select').value = id;
+  S.station = id || null;
+  document.getElementById('station-select').value = S.station || '';
   renderPanels();
   updateMap();
-  focusStation(id);
+  if (S.station) focusStation(S.station);
   writeHash();
 }
 
-// Slider moved: cheap in-place refresh (marker visibility, infra filter,
-// chart marker, KPI values) — no chart rebuilds.
-function refreshForDate() {
+function setSegMode(mode) {
+  S.seg_mode = mode;
+  renderPanels();
+  updateMap();
+}
+
+// Slider moved (date or hour): cheap in-place refresh — no chart rebuilds.
+function refreshForSlider() {
   styleMarkers();
   drawInfra();
   PANELS.forEach(function (p) { if (p && p.update) p.update(S); });
@@ -147,30 +143,31 @@ function renderPanels() {
   var view = DATA.manifest.views[S.view];
   var head = document.getElementById('panel-station');
   var hint = document.getElementById('panel-hint');
-  var needsStation = view.layers.some(function (n) { return DATA.manifest.layers[n].scope === 'station'; });
-  if (needsStation && !S.station) {
-    head.textContent = 'Select a station';
-    hint.textContent = 'Click a marker on the map, or pick a station from the list.';
-    return;
-  }
-  var st = stations().find(function (s) { return s.id === S.station; });
-  head.textContent = needsStation ? S.station : view.title;
-  hint.textContent = needsStation && st
+  var body = document.getElementById('panel-body');
+  var st = S.station ? stationById(S.station) : null;
+  head.textContent = st ? S.station : view.title;
+  hint.textContent = st
     ? fmtNum(st.trips) + ' trips · live from ' + fmtDate(st.first_trip) + ' · ' + viewHint(view)
     : viewHint(view);
-  var body = document.getElementById('panel-body');
+  var skipped = 0;
   view.layers.forEach(function (name) {
-    var meta = Object.assign({ __name: name }, DATA.manifest.layers[name]);
+    var meta = DATA.manifest.layers[name];
+    if (meta.scope === 'station' && !S.station) { skipped++; return; }
     var fn = RENDERERS[meta.render];
     if (!fn) { console.warn('No renderer for', meta.render); return; }
     PANELS.push(fn(body, layerData(meta, S), meta, S));
   });
+  if (skipped) {
+    body.appendChild(el('div', 'card-prompt', 'Click a station on the map, or pick one from the list, to see its ' +
+      (view.phase === 1 ? 'top destinations, origins and hourly split.' : view.phase === 3 ? 'busiest corridors and neighbourhood profile.' : 'infrastructure exposure.')));
+  }
 }
 
 function viewHint(view) {
-  if (view.phase === 1) return 'lines on the map follow the shortest bike-network route';
+  if (view.phase === 1) return 'lines follow the shortest bike-network route; press play for a standard day';
   if (view.phase === 2) return 'drag the slider or press play; stations appear at their first trip';
-  return 'corridor colours show the k-means commuter label from the dissertation';
+  if (view.phase === 3) return S.station ? 'corridor colours show the k-means commuter label' : 'street width = trips on that street across all corridors';
+  return 'click a segment for its trip counts; switch to commuter corridors in the legend';
 }
 
 document.addEventListener('DOMContentLoaded', init);

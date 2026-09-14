@@ -46,6 +46,7 @@
    "subtitle": "Share of trips starting (blue) vs ending (red) here, 06:00-23:00",
    "x_key": "hour",
    "x_suffix": ":00",
+   "marker": "hour",
    "series": [
     {
      "key": "out",
@@ -173,6 +174,84 @@
     }
    ]
   },
+  "corridor_network_kpi": {
+   "file": "corridor_network.json",
+   "scope": "global",
+   "render": "kpi",
+   "title": "Corridors across the network",
+   "subtitle": "k-means label of each station pair (pre-COVID, pairs with 30+ trips)",
+   "items": [
+    {
+     "key": "commuter_pct",
+     "label": "Trips on commuter corridors",
+     "unit": "%",
+     "dp": 1,
+     "colour": "#741e6d"
+    },
+    {
+     "key": "noncommuter_pct",
+     "label": "Trips on non-commuter corridors",
+     "unit": "%",
+     "dp": 1,
+     "colour": "#28a197"
+    },
+    {
+     "key": "commuter_pairs",
+     "label": "Commuter pairs",
+     "dp": 0
+    },
+    {
+     "key": "noncommuter_pairs",
+     "label": "Non-commuter pairs",
+     "dp": 0
+    },
+    {
+     "key": "unclassified_pct",
+     "label": "Trips on unclassified pairs",
+     "unit": "%",
+     "dp": 1,
+     "colour": "#b3b3b3"
+    },
+    {
+     "key": "unclassified_pairs",
+     "label": "Unclassified pairs",
+     "dp": 0
+    }
+   ]
+  },
+  "commuter_kpi": {
+   "file": "context_by_station.json",
+   "scope": "station",
+   "render": "kpi",
+   "title": "Commuter character",
+   "items": [
+    {
+     "key": "commuter_pct",
+     "label": "Trips on commuter corridors",
+     "unit": "%",
+     "dp": 1,
+     "colour": "#741e6d"
+    },
+    {
+     "key": "classified_pct",
+     "label": "Trips on classified pairs",
+     "unit": "%",
+     "dp": 1
+    },
+    {
+     "key": "commuter_pairs",
+     "label": "Commuter partners",
+     "dp": 0
+    },
+    {
+     "key": "exp_any",
+     "label": "Route on infrastructure",
+     "unit": "%",
+     "dp": 1,
+     "colour": "#5eb135"
+    }
+   ]
+  },
   "corridor_top": {
    "file": "context_by_station.json",
    "scope": "station",
@@ -186,7 +265,7 @@
    "colour_key": "commuter",
    "colour_map": {
     "commuter": "#741e6d",
-    "leisure": "#28a197",
+    "non-commuter": "#28a197",
     "unclassified": "#b3b3b3"
    },
    "map_lines": {
@@ -194,7 +273,7 @@
     "colour_key": "commuter",
     "colour_map": {
      "commuter": "#741e6d",
-     "leisure": "#28a197",
+     "non-commuter": "#28a197",
      "unclassified": "#b3b3b3"
     }
    }
@@ -243,39 +322,6 @@
      "key": "mixed",
      "label": "Mixed traffic",
      "colour": "#fdd522"
-    }
-   ]
-  },
-  "commuter_kpi": {
-   "file": "context_by_station.json",
-   "scope": "station",
-   "render": "kpi",
-   "title": "Commuter character",
-   "items": [
-    {
-     "key": "commuter_pct",
-     "label": "Trips on commuter corridors",
-     "unit": "%",
-     "dp": 1,
-     "colour": "#741e6d"
-    },
-    {
-     "key": "classified_pct",
-     "label": "Trips on classified pairs",
-     "unit": "%",
-     "dp": 1
-    },
-    {
-     "key": "commuter_pairs",
-     "label": "Commuter partners",
-     "dp": 0
-    },
-    {
-     "key": "exp_any",
-     "label": "Route on infrastructure",
-     "unit": "%",
-     "dp": 1,
-     "colour": "#5eb135"
     }
    ]
   },
@@ -341,6 +387,51 @@
      "dp": 0
     }
    ]
+  },
+  "segregated_kpi": {
+   "file": "segregated_summary.json",
+   "scope": "global",
+   "field_from_state": "seg_mode",
+   "render": "kpi",
+   "title": "Trips that followed segregated infrastructure",
+   "subtitle": "Route within 15 m of a segregated segment for 30 m or more",
+   "items": [
+    {
+     "key": "share_pct",
+     "label": "Share of trips",
+     "unit": "%",
+     "dp": 1,
+     "colour": "#1a7032"
+    },
+    {
+     "key": "trips_on",
+     "label": "Trips",
+     "dp": 0
+    },
+    {
+     "key": "pairs_on",
+     "label": "Station pairs",
+     "dp": 0
+    },
+    {
+     "key": "trips_total",
+     "label": "Of all trips considered",
+     "dp": 0
+    }
+   ]
+  },
+  "segregated_top": {
+   "file": "segregated_summary.json",
+   "scope": "global",
+   "field_from_state": "seg_mode",
+   "field": "top",
+   "render": "bar",
+   "orientation": "horizontal",
+   "title": "Most-used segregated routes",
+   "subtitle": "Trips whose route followed the street or scheme",
+   "label_key": "name",
+   "value_key": "trips",
+   "colour": "#1a7032"
   }
  },
  "views": {
@@ -359,8 +450,14 @@
      "od_top_origins"
     ],
     "infra": "none",
-    "timeline": false
-   }
+    "loads": "none",
+    "timeline": "hours",
+    "stations": "sized"
+   },
+   "legend": [
+    "lines",
+    "stations"
+   ]
   },
   "timeline": {
    "title": "Infrastructure timeline",
@@ -372,13 +469,20 @@
    "map": {
     "lines": [],
     "infra": "timeline",
-    "timeline": true
-   }
+    "loads": "none",
+    "timeline": "dates",
+    "stations": "dots"
+   },
+   "legend": [
+    "infra",
+    "stations"
+   ]
   },
   "corridors": {
    "title": "Corridors & context",
    "phase": 3,
    "layers": [
+    "corridor_network_kpi",
     "commuter_kpi",
     "corridor_top",
     "corridor_exposure",
@@ -389,9 +493,35 @@
     "lines": [
      "corridor_top"
     ],
-    "infra": "all",
-    "timeline": false
-   }
+    "infra": "none",
+    "loads": "corridor",
+    "timeline": "none",
+    "stations": "dots"
+   },
+   "legend": [
+    "corridor",
+    "stations"
+   ]
+  },
+  "segregated": {
+   "title": "Segregated infrastructure",
+   "phase": 4,
+   "layers": [
+    "segregated_kpi",
+    "segregated_top",
+    "station_exposure"
+   ],
+   "map": {
+    "lines": [],
+    "infra": "segregated",
+    "loads": "none",
+    "timeline": "none",
+    "stations": "dots"
+   },
+   "legend": [
+    "segmode",
+    "stations"
+   ]
   }
  },
  "colours": {
@@ -407,7 +537,7 @@
   },
   "corridor": {
    "commuter": "#741e6d",
-   "leisure": "#28a197",
+   "non-commuter": "#28a197",
    "unclassified": "#b3b3b3"
   },
   "ui": {
@@ -430,6 +560,7 @@
   "commuter_pct": 31.2,
   "classified_pct": 71.9,
   "exp_any_pct": 28.9,
+  "segregated_share_pct": 77.1,
   "router": "osmnx",
   "routes": 2002
  }

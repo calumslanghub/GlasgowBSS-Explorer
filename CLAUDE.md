@@ -284,3 +284,24 @@ third tab, with **no new renderers** (reuses `bar` and `kpi`):
 Build: `analysis/context.py` (pure) → `build/context.py` writes
 `context_by_station.json`; manifest entries in `config/layers.yaml` under the
 `corridors` view.
+
+### Phase 4: Segregated infrastructure usage
+
+A fourth tab showing only segregated segments, each drawn with width = trips
+whose bike-network route followed it (within the dissertation's 15 m snap
+tolerance for at least 30 m), with a legend switch to commuter-corridor trips
+only. Build: `build/routes.py` routes **all** directed OD pairs once
+(`RouteSet`), `analysis/loads.py` (pure) accumulates per-edge loads and
+per-segment usage, `build/segregated.py` writes `segregated.geojson` and
+`segregated_summary.json`. The same routing feeds the phase 3 city-wide flow
+map (`corridor_load.geojson`).
+
+### Frontend conventions added after first review
+
+- Corridor labels are **commuter / non-commuter / unclassified**. Never
+  "leisure": the dissertation does not classify leisure use.
+- The map legend is the single place for show/hide toggles; every legend
+  entry is a button. Views declare legend groups in `layers.yaml`.
+- Stations are uniform dots except in Station flows (size = trips). The
+  slider bar is generic: `dates` (phase 2) or `hours` (phase 1 standard day).
+- Clicking empty map deselects the station; global-scope layers still render.

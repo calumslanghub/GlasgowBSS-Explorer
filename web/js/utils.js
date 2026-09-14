@@ -8,6 +8,19 @@ function hexAlpha(hex, a) {
   return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
 }
 
+function hexToRgb(hex) {
+  hex = hex.replace('#', '');
+  return [parseInt(hex.substr(0, 2), 16), parseInt(hex.substr(2, 2), 16), parseInt(hex.substr(4, 2), 16)];
+}
+function rgbToHex(rgb) {
+  return '#' + rgb.map(function (v) { return Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0'); }).join('');
+}
+// Linear blend between two hex colours; t = 0 gives c1, t = 1 gives c2.
+function lerpColor(c1, c2, t) {
+  var a = hexToRgb(c1), b = hexToRgb(c2);
+  return rgbToHex([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
+}
+
 // Number formatting: thousands separators, fixed decimals, optional unit.
 function fmtNum(v, dp, unit) {
   if (v === null || v === undefined || Number.isNaN(v)) return '–';

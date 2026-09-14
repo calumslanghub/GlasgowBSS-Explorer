@@ -4,7 +4,8 @@
 //           corridors, exposure by type) and vertical stacked/100% series
 //           (hourly origin vs destination) are the SAME renderer, configured
 //           by meta: orientation, series | value_key, label_key | x_key,
-//           stacked, percent, colour | colour_key + colour_map, rows, max, unit.
+//           stacked, percent, colour | colour_key + colour_map, rows, max, unit,
+//           marker (state key whose value is highlighted on the x axis).
 //   line  - Chart.js multi-series time series (km open by type) with optional
 //           stacked fill, a secondary-axis series and a vertical marker at a
 //           state value (the slider date).
@@ -56,13 +57,26 @@ function categoryLegend(meta) {
   return lg;
 }
 
+// Vertical guide plugin: draws a dashed line at chart.$markerIndex (x index).
+var markerPlugin = {
+  id: 'stateMarker',
+  afterDatasetsDraw: function (chart) {
+    var idx = chart.$markerIndex;
+    if (idx === undefined || idx === null || idx < 0) return;
+    var x = chart.scales.x.getPixelForValue(idx);
+    var ctx = chart.ctx, area = chart.chartArea;
+    ctx.save(); ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom); ctx.stroke(); ctx.restore();
+  }
+};
+
 // ── GENERIC 1: bar ────────────────────────────────────────────────────────────
 RENDERERS.bar = function (container, data, meta, state) {
   var c = makeCard(meta);
   container.appendChild(c.card);
   var horizontal = (meta.orientation || 'horizontal') === 'horizontal';
   var rows = rowsFromData(data, meta);
-  if (!rows.length) { c.body.appendChild(el('div', 'card-empty', 'No data for this station.')); return null; }
+  if (!rows.length) { c.body.appendChild(el('div', 'card-empty', 'No data.')); return null; }
 
   var height = horizontal ? Math.max(120, 22 * rows.length + 30) : 190;
   var canvas = chartBox(c.body, height);
@@ -74,7 +88,6 @@ RENDERERS.bar = function (container, data, meta, state) {
 
   var datasets;
   if (meta.series) {
-    // Multi-series (stacked / percent) — one dataset per series key.
     var totals = rows.map(function (r) {
       return meta.series.reduce(function (s, sr) { return s + (Number(r[sr.key]) || 0); }, 0);
     });
@@ -115,6 +128,7 @@ RENDERERS.bar = function (container, data, meta, state) {
             if (item.dataset.raw) txt += '  (' + fmtNum(item.dataset.raw[item.dataIndex]) + ' trips)';
             if (meta.share_key && r[meta.share_key] !== undefined) txt += '  ·  ' + fmtNum(r[meta.share_key], 1, '%') + ' of trips';
             if (meta.colour_key && r[meta.colour_key]) txt += '  ·  ' + r[meta.colour_key];
+            if (r.km !== undefined) txt += '  ·  ' + fmtNum(r.km, 1, ' km');
             return txt;
           }
         }
@@ -129,26 +143,20 @@ RENDERERS.bar = function (container, data, meta, state) {
            title: { display: !horizontal && !!meta.y_label, text: meta.y_label } }
     }
   };
-  var chart = new Chart(canvas.getContext('2d'), { type: 'bar', data: { labels: labels, datasets: datasets }, options: opts });
+  var chart = new Chart(canvas.getContext('2d'), { type: 'bar', data: { labels: labels, datasets: datasets }, options: opts, plugins: meta.marker ? [markerPlugin] : [] });
   var lg = categoryLegend(meta);
   if (lg) c.body.appendChild(lg);
-  return { chart: chart, update: null };
+  function update(st) {
+    if (!meta.marker || horizontal) return;
+    var v = st[meta.marker];
+    chart.$markerIndex = (v === null || v === undefined) ? -1 : rows.findIndex(function (r) { return r[meta.x_key] === v; });
+    chart.draw();
+  }
+  update(state);
+  return { chart: chart, update: update };
 };
 
 // ── GENERIC 2: line (time series) ─────────────────────────────────────────────
-// Vertical marker plugin: draws a guide at the x index held in state[meta.marker].
-var markerPlugin = {
-  id: 'dateMarker',
-  afterDatasetsDraw: function (chart) {
-    var idx = chart.$markerIndex;
-    if (idx === undefined || idx === null || idx < 0) return;
-    var x = chart.scales.x.getPixelForValue(idx);
-    var ctx = chart.ctx, area = chart.chartArea;
-    ctx.save(); ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
-    ctx.beginPath(); ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom); ctx.stroke(); ctx.restore();
-  }
-};
-
 RENDERERS.line = function (container, data, meta, state) {
   var c = makeCard(meta);
   container.appendChild(c.card);
@@ -203,7 +211,7 @@ RENDERERS.line = function (container, data, meta, state) {
 RENDERERS.kpi = function (container, data, meta, state) {
   var c = makeCard(meta);
   container.appendChild(c.card);
-  if (!data) { c.body.appendChild(el('div', 'card-empty', 'No data for this station.')); return null; }
+  if (!data) { c.body.appendChild(el('div', 'card-empty', 'No data.')); return null; }
   var grid = el('div', 'kpi-grid' + (meta.compact ? ' compact' : ''));
   c.body.appendChild(grid);
   var cells = {};
