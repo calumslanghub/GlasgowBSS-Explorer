@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glasgow Bike-Share Explorer</title>
+<meta name="description" content="Interactive dashboard of Glasgow's nextbike bike-share system: station flows, the cycle-infrastructure timeline and corridor character. MSc dissertation portfolio piece.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<link rel="stylesheet" href="css/style.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header id="topbar">
+  <div id="brand">
+    <span id="brand-title">Glasgow Bike-Share Explorer</span>
+    <span id="brand-sub">nextbike Glasgow, Sep 2017 to Apr 2024</span>
+  </div>
+  <div id="summary-tiles" aria-label="Network summary"></div>
+  <nav id="view-tabs" aria-label="Views"></nav>
+</header>
+
+<main id="body">
+  <section id="map-wrap">
+    <div id="map" role="application" aria-label="Station map"></div>
+
+    <div id="map-toolbar">
+      <div id="station-picker">
+        <label for="station-select" class="sr-only">Selected station</label>
+        <select id="station-select"></select>
+      </div>
+      <div id="line-toggle" class="btn-group" hidden>
+        <button data-lines="origin" class="active" type="button">Outbound</button>
+        <button data-lines="destination" class="active" type="button">Inbound</button>
+      </div>
+      <div id="map-legend"></div>
+    </div>
+
+    <div id="timeline" hidden>
+      <button id="tl-play" type="button" aria-label="Play">&#9654;</button>
+      <input id="tl-slider" type="range" min="0" max="0" value="0" step="1" aria-label="Date">
+      <div id="tl-date"></div>
+      <div id="tl-epoch-ticks"></div>
+    </div>
+  </section>
+
+  <aside id="panel">
+    <div id="panel-head">
+      <h1 id="panel-station">Select a station</h1>
+      <p id="panel-hint">Click a marker on the map, or pick a station from the list.</p>
+    </div>
+    <div id="panel-body"></div>
+    <footer id="panel-foot">
+      <p id="foot-text"></p>
+    </footer>
+  </aside>
+</main>
+
+<script src="js/utils.js"></script>
+<script src="js/data.js"></script>
+<script src="js/renderers.js"></script>
+<script src="js/map.js"></script>
+<script src="js/timeline.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

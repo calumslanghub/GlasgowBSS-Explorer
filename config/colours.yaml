@@ -1,0 +1,25 @@
+# Palette. Mode colours come from the dissertation (v4git/build/constants.R)
+# so the dashboard looks coherent with the rest of the portfolio.
+
+roles:
+  origin: "#0065bd"        # trips that START at the selected station (blue)
+  destination: "#d32205"   # trips that END at the selected station (red)
+
+infra:
+  segregated: "#1a7032"    # Walk/dark green
+  lane: "#5eb135"          # Cycle green
+  shared: "#28a197"        # teal
+  mixed: "#fdd522"         # yellow
+
+corridor:
+  commuter: "#741e6d"      # purple
+  leisure: "#28a197"       # teal
+  unclassified: "#b3b3b3"  # grey
+
+ui:
+  accent: "#0065bd"
+  ink: "#1a1a1a"
+  muted: "#5e5e5e"
+  station: "#002d54"
+  station_selected: "#fdd522"
+  station_dim: "#b3b3b3"

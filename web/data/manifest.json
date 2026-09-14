@@ -1,0 +1,436 @@
+{
+ "layers": {
+  "od_top_destinations": {
+   "file": "od_by_station.json",
+   "scope": "station",
+   "field": "top_dest",
+   "render": "bar",
+   "orientation": "horizontal",
+   "title": "Top 10 destinations",
+   "subtitle": "Where trips starting here go",
+   "label_key": "station",
+   "value_key": "trips",
+   "share_key": "share",
+   "colour": "#0065bd",
+   "map_lines": {
+    "role": "origin",
+    "colour": "#0065bd"
+   }
+  },
+  "od_top_origins": {
+   "file": "od_by_station.json",
+   "scope": "station",
+   "field": "top_orig",
+   "render": "bar",
+   "orientation": "horizontal",
+   "title": "Top 10 origins",
+   "subtitle": "Where trips ending here started",
+   "label_key": "station",
+   "value_key": "trips",
+   "share_key": "share",
+   "colour": "#d32205",
+   "map_lines": {
+    "role": "destination",
+    "colour": "#d32205"
+   }
+  },
+  "od_hourly_split": {
+   "file": "od_by_station.json",
+   "scope": "station",
+   "field": "hourly",
+   "render": "bar",
+   "orientation": "vertical",
+   "stacked": true,
+   "percent": true,
+   "title": "Origin vs destination by hour",
+   "subtitle": "Share of trips starting (blue) vs ending (red) here, 06:00-23:00",
+   "x_key": "hour",
+   "x_suffix": ":00",
+   "series": [
+    {
+     "key": "out",
+     "label": "Origin (trips start here)",
+     "colour": "#0065bd"
+    },
+    {
+     "key": "in",
+     "label": "Destination (trips end here)",
+     "colour": "#d32205"
+    }
+   ],
+   "y_label": "% of trips"
+  },
+  "od_split_kpi": {
+   "file": "od_by_station.json",
+   "scope": "station",
+   "render": "kpi",
+   "title": "All-day split",
+   "items": [
+    {
+     "key": "out_trips",
+     "label": "Trips starting here",
+     "dp": 0
+    },
+    {
+     "key": "in_trips",
+     "label": "Trips ending here",
+     "dp": 0
+    },
+    {
+     "key": "out_share",
+     "label": "Origin share",
+     "unit": "%",
+     "dp": 1,
+     "colour": "#0065bd"
+    },
+    {
+     "key": "in_share",
+     "label": "Destination share",
+     "unit": "%",
+     "dp": 1,
+     "colour": "#d32205"
+    }
+   ]
+  },
+  "infra_km_timeline": {
+   "file": "infra_timeline.json",
+   "scope": "global",
+   "render": "line",
+   "title": "Cycle infrastructure open, km",
+   "subtitle": "Cumulative by type; dashed line = docking stations live",
+   "x_key": "dates",
+   "marker": "date",
+   "fill": true,
+   "stacked": true,
+   "series": [
+    {
+     "key": "segregated",
+     "label": "Segregated",
+     "colour": "#1a7032"
+    },
+    {
+     "key": "lane",
+     "label": "Cycle lane",
+     "colour": "#5eb135"
+    },
+    {
+     "key": "shared",
+     "label": "Shared path/footway",
+     "colour": "#28a197"
+    },
+    {
+     "key": "mixed",
+     "label": "Mixed traffic",
+     "colour": "#fdd522"
+    }
+   ],
+   "secondary": {
+    "key": "stations",
+    "label": "Stations live",
+    "colour": "#002d54",
+    "y_label": "stations"
+   },
+   "y_label": "km"
+  },
+  "infra_state_kpi": {
+   "file": "infra_timeline.json",
+   "scope": "global",
+   "render": "kpi",
+   "title": "At the selected date",
+   "at_marker": "date",
+   "items": [
+    {
+     "key": "any",
+     "label": "Infrastructure open",
+     "unit": " km",
+     "dp": 1
+    },
+    {
+     "key": "segregated",
+     "label": "Segregated",
+     "unit": " km",
+     "dp": 1,
+     "colour": "#1a7032"
+    },
+    {
+     "key": "lane",
+     "label": "Cycle lane",
+     "unit": " km",
+     "dp": 1,
+     "colour": "#5eb135"
+    },
+    {
+     "key": "shared",
+     "label": "Shared",
+     "unit": " km",
+     "dp": 1,
+     "colour": "#28a197"
+    },
+    {
+     "key": "stations",
+     "label": "Stations live",
+     "dp": 0
+    }
+   ]
+  },
+  "corridor_top": {
+   "file": "context_by_station.json",
+   "scope": "station",
+   "field": "corridors",
+   "render": "bar",
+   "orientation": "horizontal",
+   "title": "Busiest corridors",
+   "subtitle": "Trips in both directions, coloured by k-means commuter label",
+   "label_key": "station",
+   "value_key": "trips",
+   "colour_key": "commuter",
+   "colour_map": {
+    "commuter": "#741e6d",
+    "leisure": "#28a197",
+    "unclassified": "#b3b3b3"
+   },
+   "map_lines": {
+    "role": "both",
+    "colour_key": "commuter",
+    "colour_map": {
+     "commuter": "#741e6d",
+     "leisure": "#28a197",
+     "unclassified": "#b3b3b3"
+    }
+   }
+  },
+  "corridor_exposure": {
+   "file": "context_by_station.json",
+   "scope": "station",
+   "field": "corridors",
+   "render": "bar",
+   "orientation": "horizontal",
+   "title": "Route on cycle infrastructure",
+   "subtitle": "% of each corridor's shortest bike route within 15 m of infrastructure",
+   "label_key": "station",
+   "value_key": "exp_any",
+   "unit": "%",
+   "max": 100,
+   "colour": "#5eb135"
+  },
+  "station_exposure": {
+   "file": "context_by_station.json",
+   "scope": "station",
+   "field": "exposure",
+   "render": "bar",
+   "orientation": "horizontal",
+   "title": "Infrastructure exposure, all trips",
+   "subtitle": "Trip-weighted share of route km by infrastructure type",
+   "unit": "%",
+   "max": 100,
+   "rows": [
+    {
+     "key": "segregated",
+     "label": "Segregated",
+     "colour": "#1a7032"
+    },
+    {
+     "key": "lane",
+     "label": "Cycle lane",
+     "colour": "#5eb135"
+    },
+    {
+     "key": "shared",
+     "label": "Shared path/footway",
+     "colour": "#28a197"
+    },
+    {
+     "key": "mixed",
+     "label": "Mixed traffic",
+     "colour": "#fdd522"
+    }
+   ]
+  },
+  "commuter_kpi": {
+   "file": "context_by_station.json",
+   "scope": "station",
+   "render": "kpi",
+   "title": "Commuter character",
+   "items": [
+    {
+     "key": "commuter_pct",
+     "label": "Trips on commuter corridors",
+     "unit": "%",
+     "dp": 1,
+     "colour": "#741e6d"
+    },
+    {
+     "key": "classified_pct",
+     "label": "Trips on classified pairs",
+     "unit": "%",
+     "dp": 1
+    },
+    {
+     "key": "commuter_pairs",
+     "label": "Commuter partners",
+     "dp": 0
+    },
+    {
+     "key": "exp_any",
+     "label": "Route on infrastructure",
+     "unit": "%",
+     "dp": 1,
+     "colour": "#5eb135"
+    }
+   ]
+  },
+  "station_profile": {
+   "file": "context_by_station.json",
+   "scope": "station",
+   "field": "profile",
+   "render": "kpi",
+   "title": "Neighbourhood (250 m census buffer)",
+   "compact": true,
+   "items": [
+    {
+     "key": "avg_age",
+     "label": "Average age",
+     "unit": " yrs",
+     "dp": 1
+    },
+    {
+     "key": "student_share",
+     "label": "Students",
+     "unit": "%",
+     "dp": 1
+    },
+    {
+     "key": "avg_cars_per_household",
+     "label": "Cars / household",
+     "dp": 2
+    },
+    {
+     "key": "avg_health_score",
+     "label": "Health score (1-5)",
+     "dp": 2
+    },
+    {
+     "key": "avg_nssec_score",
+     "label": "NS-SeC score",
+     "dp": 1
+    },
+    {
+     "key": "cycling_distance_share",
+     "label": "Commutes in cycling range",
+     "unit": "%",
+     "dp": 1
+    },
+    {
+     "key": "over16pop",
+     "label": "Residents 16+",
+     "dp": 0
+    },
+    {
+     "key": "workplace_pop",
+     "label": "Workplace population",
+     "dp": 0
+    },
+    {
+     "key": "n_on_premises",
+     "label": "Licensed premises",
+     "dp": 0
+    },
+    {
+     "key": "premises_capacity",
+     "label": "Premises capacity",
+     "dp": 0
+    }
+   ]
+  }
+ },
+ "views": {
+  "flows": {
+   "title": "Station flows",
+   "phase": 1,
+   "layers": [
+    "od_split_kpi",
+    "od_top_destinations",
+    "od_top_origins",
+    "od_hourly_split"
+   ],
+   "map": {
+    "lines": [
+     "od_top_destinations",
+     "od_top_origins"
+    ],
+    "infra": "none",
+    "timeline": false
+   }
+  },
+  "timeline": {
+   "title": "Infrastructure timeline",
+   "phase": 2,
+   "layers": [
+    "infra_state_kpi",
+    "infra_km_timeline"
+   ],
+   "map": {
+    "lines": [],
+    "infra": "timeline",
+    "timeline": true
+   }
+  },
+  "corridors": {
+   "title": "Corridors & context",
+   "phase": 3,
+   "layers": [
+    "commuter_kpi",
+    "corridor_top",
+    "corridor_exposure",
+    "station_exposure",
+    "station_profile"
+   ],
+   "map": {
+    "lines": [
+     "corridor_top"
+    ],
+    "infra": "all",
+    "timeline": false
+   }
+  }
+ },
+ "colours": {
+  "roles": {
+   "origin": "#0065bd",
+   "destination": "#d32205"
+  },
+  "infra": {
+   "segregated": "#1a7032",
+   "lane": "#5eb135",
+   "shared": "#28a197",
+   "mixed": "#fdd522"
+  },
+  "corridor": {
+   "commuter": "#741e6d",
+   "leisure": "#28a197",
+   "unclassified": "#b3b3b3"
+  },
+  "ui": {
+   "accent": "#0065bd",
+   "ink": "#1a1a1a",
+   "muted": "#5e5e5e",
+   "station": "#002d54",
+   "station_selected": "#fdd522",
+   "station_dim": "#b3b3b3"
+  }
+ },
+ "summary": {
+  "stations": 119,
+  "trips": 1201944,
+  "pairs": 11052,
+  "date_start": "2017-09-15",
+  "date_end": "2024-04-01",
+  "infra_km": 352.14,
+  "infra_segments": 964,
+  "commuter_pct": 31.2,
+  "classified_pct": 71.9,
+  "exp_any_pct": 28.9,
+  "router": "osmnx",
+  "routes": 2002
+ }
+}

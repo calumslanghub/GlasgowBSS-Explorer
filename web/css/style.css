@@ -1,0 +1,151 @@
+/* Glasgow Bike-Share Explorer — layout + components. Palette mirrors config/colours.yaml. */
+
+:root {
+  --accent: #0065bd;
+  --accent-dark: #00437e;
+  --ink: #1a1a1a;
+  --muted: #5e5e5e;
+  --line: #e3e3e3;
+  --bg: #f4f5f7;
+  --card: #ffffff;
+  --origin: #0065bd;
+  --destination: #d32205;
+  --yellow: #fdd522;
+  --panel-w: 420px;
+  --font: 'Roboto', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font); color: var(--ink); background: var(--bg);
+  display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+  font-size: 14px; line-height: 1.4;
+}
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+[hidden] { display: none !important; }
+button { font-family: var(--font); cursor: pointer; }
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+#topbar {
+  background: var(--accent); color: #fff; display: flex; align-items: center;
+  gap: 18px; padding: 0 18px; min-height: 60px; flex-shrink: 0; z-index: 1100;
+}
+#brand { display: flex; flex-direction: column; line-height: 1.15; white-space: nowrap; }
+#brand-title { font-weight: 700; font-size: 1.1rem; }
+#brand-sub { font-size: 0.74rem; opacity: 0.85; }
+#summary-tiles { display: flex; gap: 14px; flex: 1; justify-content: center; flex-wrap: wrap; }
+.sum-tile { display: flex; flex-direction: column; align-items: center; line-height: 1.1; min-width: 70px; }
+.sum-tile b { font-size: 1.05rem; font-weight: 700; }
+.sum-tile span { font-size: 0.66rem; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.03em; }
+#view-tabs { display: flex; gap: 4px; }
+.view-tab {
+  border: 1px solid rgba(255,255,255,0.35); background: transparent; color: #fff;
+  padding: 7px 12px; border-radius: 4px; font-size: 0.82rem; display: flex; gap: 6px; align-items: center;
+}
+.view-tab .phase { font-size: 0.62rem; background: rgba(255,255,255,0.2); padding: 1px 5px; border-radius: 3px; }
+.view-tab:hover { background: var(--accent-dark); }
+.view-tab.active { background: var(--yellow); color: var(--ink); border-color: var(--yellow); font-weight: 700; }
+.view-tab.active .phase { background: rgba(0,0,0,0.12); }
+
+/* ── Body ───────────────────────────────────────────────────────────────── */
+#body { display: flex; flex: 1; min-height: 0; }
+#map-wrap { flex: 1; position: relative; min-width: 0; }
+#map { position: absolute; inset: 0; background: #e8ecef; }
+
+#map-toolbar {
+  position: absolute; top: 10px; left: 10px; z-index: 900; display: flex;
+  flex-direction: column; gap: 6px; max-width: 320px;
+}
+#station-select {
+  width: 300px; padding: 8px 10px; border: 1px solid #b3b3b3; border-radius: 4px;
+  font-family: var(--font); font-size: 0.86rem; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+}
+.btn-group { display: flex; box-shadow: 0 1px 4px rgba(0,0,0,0.15); border-radius: 4px; overflow: hidden; width: fit-content; }
+.btn-group button {
+  border: 1px solid #b3b3b3; background: #fff; color: var(--ink); padding: 5px 10px; font-size: 0.78rem;
+  display: flex; align-items: center; gap: 6px;
+}
+.btn-group button + button { border-left: none; }
+.btn-group button .swatch { width: 14px; height: 4px; border-radius: 2px; background: #999; opacity: 0.35; }
+.btn-group button.active .swatch { opacity: 1; }
+.btn-group button.active { background: #f3f7fb; font-weight: 500; }
+#map-legend {
+  background: rgba(255,255,255,0.94); border-radius: 4px; padding: 6px 10px; font-size: 0.74rem;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15); display: flex; flex-wrap: wrap; gap: 4px 12px; width: fit-content;
+}
+#map-legend:empty { display: none; }
+.lg { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.lg i { display: inline-block; width: 16px; height: 4px; border-radius: 2px; }
+.lg i.dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.3); }
+
+.leaflet-container { font-family: var(--font); }
+.station-tip { font-size: 0.78rem; }
+.station-tip b { display: block; }
+.leaflet-control-attribution { font-size: 0.62rem; }
+
+/* ── Timeline (phase 2) ─────────────────────────────────────────────────── */
+#timeline {
+  position: absolute; left: 12px; right: 12px; bottom: 14px; z-index: 900;
+  background: rgba(255,255,255,0.96); border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  padding: 10px 14px 16px; display: grid; grid-template-columns: auto 1fr auto; gap: 8px 12px; align-items: center;
+}
+#timeline[hidden] { display: none; }
+#tl-play {
+  width: 36px; height: 36px; border-radius: 50%; border: none; background: var(--accent); color: #fff; font-size: 0.9rem;
+}
+#tl-play:hover { background: var(--accent-dark); }
+#tl-slider { width: 100%; accent-color: var(--accent); }
+#tl-date { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 110px; text-align: right; }
+#tl-epoch-ticks { grid-column: 2; position: relative; height: 8px; margin-top: -6px; }
+#tl-epoch-ticks i { position: absolute; top: 0; width: 1px; height: 8px; background: #999; }
+#tl-epoch-ticks i.station { background: var(--accent); }
+
+/* ── Side panel ─────────────────────────────────────────────────────────── */
+#panel {
+  width: var(--panel-w); flex-shrink: 0; background: var(--card); border-left: 1px solid #cfd3d8;
+  display: flex; flex-direction: column; min-height: 0;
+}
+#panel-head { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+#panel-station { font-size: 1.05rem; font-weight: 700; line-height: 1.2; }
+#panel-hint { font-size: 0.76rem; color: var(--muted); margin-top: 3px; }
+#panel-body { flex: 1; overflow-y: auto; padding: 10px 16px 16px; }
+#panel-foot { padding: 8px 16px; border-top: 1px solid var(--line); font-size: 0.68rem; color: var(--muted); }
+#panel-foot a { color: var(--accent); }
+
+.card { margin-bottom: 14px; }
+.card-head { margin-bottom: 6px; }
+.card-title { font-size: 0.86rem; font-weight: 700; }
+.card-sub { font-size: 0.72rem; color: var(--muted); }
+.card-body { position: relative; }
+/* Chart.js sizes to its parent, so each canvas gets a dedicated, fixed-height box. */
+.chart-box { position: relative; width: 100%; }
+.card-empty { font-size: 0.78rem; color: var(--muted); padding: 10px 0; }
+
+/* KPI tiles */
+.kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.kpi-grid.compact { grid-template-columns: repeat(2, 1fr); gap: 4px 10px; }
+.kpi {
+  background: var(--bg); border-radius: 5px; padding: 8px 10px; border-left: 3px solid #cfd3d8;
+}
+.kpi b { display: block; font-size: 1.15rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.kpi span { font-size: 0.7rem; color: var(--muted); }
+.compact .kpi { background: transparent; border-left: none; padding: 3px 0; display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px dotted var(--line); }
+.compact .kpi b { font-size: 0.86rem; order: 2; }
+.compact .kpi span { font-size: 0.74rem; color: var(--ink); }
+
+.chart-note { font-size: 0.68rem; color: var(--muted); margin-top: 4px; }
+.legend-inline { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.7rem; margin-top: 4px; color: var(--muted); }
+.legend-inline i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  body { overflow: auto; height: auto; }
+  #topbar { flex-wrap: wrap; padding: 10px 14px; gap: 10px; }
+  #summary-tiles { order: 3; width: 100%; justify-content: flex-start; }
+  #body { flex-direction: column; }
+  #map-wrap { height: 62vh; flex: none; }
+  #panel { width: 100%; border-left: none; border-top: 1px solid #cfd3d8; }
+  #panel-body { overflow: visible; }
+  #station-select { width: 230px; }
+}

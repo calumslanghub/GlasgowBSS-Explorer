@@ -1,0 +1,23 @@
+[project]
+name = "diss-dash"
+version = "0.1.0"
+description = "Glasgow nextbike bike-share dashboard: static site built from dissertation aggregates"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "pyyaml",
+    "geopandas>=0.14",
+    "pyproj",
+    "shapely>=2.0",
+]
+
+[project.optional-dependencies]
+routing = ["osmnx>=2.0", "networkx"]
+test = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.black]
+line-length = 88
