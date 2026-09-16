@@ -78,6 +78,26 @@ button { font-family: var(--font); cursor: pointer; }
 .lg.off i { opacity: 0.25; }
 .lg.radio.on { background: #eef4fa; border-color: var(--accent); font-weight: 500; }
 .lg-note { font-size: 0.66rem; color: var(--muted); padding: 0 6px; }
+.lg-note.lg-wide { flex-basis: 100%; padding-top: 2px; max-width: 320px; white-space: normal; }
+.lg i.col { width: 8px; height: 14px; border-radius: 1px; }
+.lg i.heat { width: 16px; height: 8px; border-radius: 2px; background: linear-gradient(90deg, #ffffb2, #fd8d3c, #bd0026); }
+.lg-ramp { display: inline-block; width: 90px; height: 10px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.15); }
+.lg-select {
+  font-family: var(--font); font-size: 0.76rem; padding: 3px 6px; border: 1px solid #b3b3b3; border-radius: 3px;
+  background: #fff; max-width: 220px;
+}
+#map.no-select .leaflet-interactive { cursor: default; }
+
+/* 2.5D population columns (residents vs workplace) */
+.bar-icon { background: transparent; border: none; }
+.bar-pair { position: absolute; bottom: 0; left: 0; width: 16px; height: 100%; display: flex; align-items: flex-end; gap: 1px; justify-content: center; }
+.bar-pair i {
+  display: block; width: 6px; border-radius: 1px 1px 0 0; opacity: 0.92;
+  box-shadow: 2px 0 0 rgba(0,0,0,0.22), 0 -2px 0 rgba(255,255,255,0.35) inset; transition: height 0.25s;
+}
+.bar-pair i.res { background: #5eb135; }
+.bar-pair i.work { background: #741e6d; }
+.bar-pair.sel i { outline: 1.5px solid var(--ink); }
 
 .leaflet-container { font-family: var(--font); }
 .station-tip { font-size: 0.78rem; }
@@ -128,6 +148,9 @@ button { font-family: var(--font); cursor: pointer; }
   background: #eef4fa; border: 1px dashed var(--accent); border-radius: 5px; padding: 10px 12px;
   font-size: 0.8rem; color: var(--accent-dark); margin-bottom: 14px;
 }
+.card-text .card-title { font-size: 0.95rem; }
+.card-text p { font-size: 0.8rem; line-height: 1.5; color: #333; }
+.legend-inline i.dot { border-radius: 50%; }
 
 /* KPI tiles */
 .kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }

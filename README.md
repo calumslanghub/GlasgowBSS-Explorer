@@ -8,12 +8,17 @@ aggregated outputs of an MSc dissertation; no raw trip data is shipped.
 
 ## What it shows
 
-| Tab | Phase | Content |
-|---|---|---|
-| Station flows | 1 | Click a station: top 10 destinations, top 10 origins, routes drawn along the shortest bike-network path (OSMnx), and the origin-vs-destination split by hour (06:00 to 23:00). Press play for a *standard day*: markers grow with that hour's trips and shade from red (mostly ending there) to blue (mostly starting there). |
-| Infrastructure timeline | 2 | A date slider (with play) that reveals cycle infrastructure as it opened, and docking stations as they recorded their first trip. Chart of km open by type. |
-| Corridors & context | 3 | City-wide flow map: every classified station pair routed on the bike network, with street width = trips on that street, toggled by commuter / non-commuter label. Click a station for its busiest corridors, route exposure to cycle infrastructure and the 250 m census-buffer neighbourhood profile. |
-| Segregated infrastructure | 4 | Only segregated segments, drawn with width = trips whose route followed them (within 15 m for at least 30 m), a ranked list of the most-used streets, and a switch to commuter-corridor trips only. |
+The five pages follow the dissertation's argument: how the system is used,
+who lives and works around the stations, what infrastructure arrived when,
+which station pairs are commuter corridors, and what the regression found.
+
+| Page | Content |
+|---|---|
+| 1 Station flows | With nothing selected: the network's weekday and weekend hourly profiles and which stations shift between weekday hubs and weekend hotspots. Click a station: top 10 destinations and origins (switchable between all days, weekdays and weekends), a weekday-vs-weekend dumbbell chart of the same partners, routes drawn along the shortest bike-network path (OSMnx), and the origin-vs-destination split by hour (06:00 to 23:00). Press play for a *standard day* (per day type): markers grow with that hour's trips per day and shade from red (mostly ending there) to blue (mostly starting there). |
+| 2 Neighbourhoods | The station-buffer covariates (Census 2022 data zones within 150, 250, 500 or 750 m; licensed premises within the buffer). Pick a variable to colour the buffers, toggle a heat map of on-sales licensed premises, or switch to residents-vs-workplace columns. Click a station for its full profile. |
+| 3 Cycle infrastructure | A date slider (with play) that reveals cycle infrastructure as it opened, and docking stations as they recorded their first trip. Chart of km open by type. Stations are not selectable here. |
+| 4 Commuter corridors | City-wide flow map: every station pair routed on the bike network, with street width = trips on that street, toggled by commuter / non-commuter label (unlabelled pairs count as non-commuter, as in the regression). Click a station for its busiest corridors and their route exposure to cycle infrastructure. |
+| 5 Regression | The negative-binomial gravity model: headline trip-rate ratios, the predicted effect of segregated exposure for commuter vs other pairs, a coefficient plot with naive and two-way clustered intervals, and the model ladder. The map shows segregated segments with width = trips whose route followed them, switchable to commuter-corridor trips only. |
 
 ## How it is built
 
@@ -90,7 +95,16 @@ Pages also work -- set the publish directory to `web/` with no build command.
   notebook; segments without a date default to the study start and the build
   logs the named schemes still undated.
 - Commuter labels are the dissertation's pre-COVID k-means classification of
-  unordered station pairs; pairs with too few trips are "unclassified".
+  unordered station pairs; pairs with too few trips to classify are counted as
+  non-commuter, matching the regression (`is_commuter` filled with 0).
+- Weekday/weekend splits and hourly profiles come from streaming the trip
+  file once; the all-days top lists come from the dissertation's OD matrix,
+  which differs from the trip file by a few dozen trips.
+- The regression coefficients are ported as constants into
+  `analysis/regression.py` from `RegressionRun.ipynb` (re-estimating needs the
+  trip file and statsmodels); the build turns them into chart rows.
+- Licensed-premises points come from the Glasgow licensing board extract used
+  in the dissertation (`data/raw/Glasgow_Alc_Premise.csv`, on-sales only).
 - Route exposure is the share of a pair's shortest bike route within 15 m of
   infrastructure, trip-weighted across the dissertation's exposure regimes.
 - The corridor flow map and segregated-usage counts route all 11,052 directed

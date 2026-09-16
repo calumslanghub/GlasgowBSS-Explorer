@@ -1,5 +1,6 @@
-"""Phase 3: commuter labels + exposure panel + covariates -> context_by_station.json
-and the city-wide corridor_network.json."""
+"""Commuter labels + exposure panel -> context_by_station.json and
+corridor_network.json; station covariates -> census_by_station.json and
+census_summary.json (the neighbourhood maps)."""
 
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ log = logging.getLogger(__name__)
 
 TOP_N: int = 10
 BUFFER_M: int = 250
+RANK_N: int = 10
 
 
 def load_inputs() -> tuple[pd.DataFrame, dict, pd.DataFrame, pd.DataFrame]:
@@ -56,7 +58,6 @@ def write_context(
         entry["exposure"] = ctx.station_exposure(od, exposure, s)
         entry.update(ctx.commuter_share(od, lookup, s))
         entry["exp_any"] = entry["exposure"]["any"]
-        entry["profile"] = ctx.station_profile(station_vars, premises, s, BUFFER_M)
         result[s] = entry
     summary = ctx.network_summary(od, exposure, lookup)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -72,9 +73,56 @@ def write_context(
         "noncommuter_pairs": net["non-commuter"]["pairs"],
         "noncommuter_trips": net["non-commuter"]["trips"],
         "noncommuter_pct": net["non-commuter"]["pct"],
-        "unclassified_pairs": net["unclassified"]["pairs"],
-        "unclassified_pct": net["unclassified"]["pct"],
+        "classified_pct": summary["classified_pct"],
+        "exp_any_pct": summary["exp_any_pct"],
     }
     out_net.write_text(json.dumps(net_payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     log.info("Wrote context for %d stations to %s; network totals to %s", len(result), out, out_net)
     return result, summary, lookup
+
+
+def write_census(
+    stations: list[str],
+    out_station: Path = sources.WEB_DATA_DIR / "census_by_station.json",
+    out_summary: Path = sources.WEB_DATA_DIR / "census_summary.json",
+) -> tuple[dict, dict]:
+    """Write the station-buffer covariates for the neighbourhood maps.
+
+    ``census_by_station.json`` is ``{station: {buffer_m: {var: value}}}``;
+    ``census_summary.json`` carries variable metadata, per-variable rankings
+    and scale statistics for every buffer, and the residents-vs-workplace rows.
+    """
+    station_vars = pd.read_csv(sources.STATION_VARS_CSV)
+    premises = pd.read_csv(sources.STATION_PREMISES_CSV)
+    table = ctx.census_table(station_vars, premises, stations)
+    vars_meta = {
+        k: {kk: v for kk, v in m.items() if kk in ("label", "unit", "dp", "desc", "heat")}
+        for k, m in ctx.CENSUS_VARS.items()
+    }
+    rank = {
+        var: {str(b): ctx.variable_ranking(table, var, b, RANK_N) for b in ctx.BUFFERS_M}
+        for var in ctx.CENSUS_VARS
+    }
+    balance = {str(b): ctx.population_balance(table, b) for b in ctx.BUFFERS_M}
+    balance_kpi = {
+        b: {
+            "residents": sum(r["residents"] for r in rows),
+            "workplace": sum(r["workplace"] for r in rows),
+            "job_rich": sum(1 for r in rows if r["workplace"] > r["residents"]),
+            "residential": sum(1 for r in rows if r["workplace"] <= r["residents"]),
+        }
+        for b, rows in balance.items()
+    }
+    by_station = {s: {str(b): v for b, v in buf.items()} for s, buf in table.items()}
+    summary = {
+        "vars": vars_meta,
+        "buffers": list(ctx.BUFFERS_M),
+        "default_buffer": BUFFER_M,
+        "rank": rank,
+        "balance": balance,
+        "balance_kpi": balance_kpi,
+    }
+    out_station.write_text(json.dumps(by_station, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    out_summary.write_text(json.dumps(summary, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    log.info("Wrote census covariates for %d stations x %d buffers", len(by_station), len(ctx.BUFFERS_M))
+    return by_station, summary

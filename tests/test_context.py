@@ -60,7 +60,8 @@ def test_corridor_rows_enrich(od: pd.DataFrame, panel: pd.DataFrame, labels: pd.
     assert rows[1]["commuter"] == "non-commuter" and rows[1]["exp_lane"] == 100.0
     # Inbound rows are keyed (partner -> station).
     rows_in = context.corridor_rows([{"station": "D", "trips": 10, "share": 100.0}], "A", "in", exp, lk)
-    assert rows_in[0]["commuter"] == "unclassified" and rows_in[0]["exp_any"] == 0.0
+    # Unlabelled pairs count as non-commuter (as in the regression).
+    assert rows_in[0]["commuter"] == "non-commuter" and rows_in[0]["exp_any"] == 0.0
 
 
 def test_undirected_corridors_combine_directions(od: pd.DataFrame, panel: pd.DataFrame, labels: pd.DataFrame) -> None:
@@ -82,31 +83,54 @@ def test_station_exposure_and_commuter_share(od: pd.DataFrame, panel: pd.DataFra
     # (60*0.25 + 40*1.0 + 20*0 + 10*0) / 130 = 0.4231
     assert se["any"] == pytest.approx(42.3, abs=0.05)
     cs = context.commuter_share(od, lk, "A")
-    # classified trips: A-B (60+20) + A-C (40) = 120 of 130; commuter = 80.
+    # labelled trips: A-B (60+20) + A-C (40) = 120 of 130; commuter = 80 of ALL 130.
     assert cs["classified_pct"] == pytest.approx(92.3, abs=0.05)
-    assert cs["commuter_pct"] == pytest.approx(66.7, abs=0.05)
+    assert cs["commuter_pct"] == pytest.approx(61.5, abs=0.05)
     assert cs["commuter_pairs"] == 1
 
 
-def test_station_profile_picks_buffer() -> None:
-    sv = pd.DataFrame(
+@pytest.fixture
+def station_vars() -> pd.DataFrame:
+    return pd.DataFrame(
         {
-            "station_id": ["A", "A"], "buffer_m": [150, 250],
-            "avg_age": [30.0, 35.0], "student_share": [0.1, 0.25],
-            "avg_cars_per_household": [0.5, 0.6], "avg_health_score": [4.0, 4.1],
-            "avg_nssec_score": [7.0, 7.5], "cycling_distance_share": [0.5, 0.6],
-            "over16pop": [100, 200], "workplace_pop": [300, 400],
+            "station_id": ["A", "A", "B"], "buffer_m": [150, 250, 250],
+            "avg_age": [30.0, 35.0, 40.0], "student_share": [0.1, 0.25, 0.05],
+            "avg_cars_per_household": [0.5, 0.6, 1.2], "avg_health_score": [4.0, 4.1, 4.3],
+            "avg_nssec_score": [7.0, 7.5, 6.0], "cycling_distance_share_ext": [0.5, 0.6, 0.7],
+            "male_female_ratio": [1.0, 1.1, 0.9],
+            "over16pop": [100, 200, 1000], "workplace_pop": [300, 400, 50],
         }
     )
-    pr = pd.DataFrame({"station_id": ["A"], "buffer_m": [250], "n_on_premises": [3], "total_capacity_on": [500.0]})
-    p = context.station_profile(sv, pr, "A", buffer_m=250)
-    assert p["avg_age"] == 35.0 and p["student_share"] == 25.0
-    assert p["n_on_premises"] == 3 and p["premises_capacity"] == 500
-    missing = context.station_profile(sv, pr, "ZZ")
-    assert missing["avg_age"] is None and missing["n_on_premises"] is None
+
+
+@pytest.fixture
+def premises() -> pd.DataFrame:
+    return pd.DataFrame({"station_id": ["A"], "buffer_m": [250], "n_on_premises": [3], "total_capacity_on": [500.0]})
+
+
+def test_census_table_scales_and_fills(station_vars: pd.DataFrame, premises: pd.DataFrame) -> None:
+    t = context.census_table(station_vars, premises, ["A", "B", "ZZ"], buffers=(150, 250))
+    assert t["A"][250]["avg_age"] == 35.0 and t["A"][250]["student_share"] == 25.0
+    assert t["A"][250]["n_on_premises"] == 3 and t["A"][250]["premises_capacity"] == 500
+    assert t["A"][150]["avg_age"] == 30.0
+    assert t["B"][250]["n_on_premises"] is None          # no premises row
+    assert t["ZZ"][250]["avg_age"] is None               # unknown station
+    assert set(t["A"][250]) == set(context.CENSUS_VARS)
+
+
+def test_variable_ranking_and_population_balance(station_vars: pd.DataFrame, premises: pd.DataFrame) -> None:
+    t = context.census_table(station_vars, premises, ["A", "B", "ZZ"], buffers=(250,))
+    rk = context.variable_ranking(t, "avg_age", 250, n=1)
+    assert rk["top"] == [{"station": "B", "value": 40.0}]
+    assert rk["bottom"] == [{"station": "A", "value": 35.0}]
+    assert rk["n"] == 2 and rk["min"] == 35.0 and rk["max"] == 40.0
+    bal = context.population_balance(t, 250)
+    assert [r["station"] for r in bal] == ["A", "B"]      # A is job-rich (400 vs 200)
+    assert bal[0]["workplace_pct"] == pytest.approx(66.7, abs=0.05)
+    assert bal[1]["log_ratio"] < 0
 
 
 def test_network_summary(od: pd.DataFrame, panel: pd.DataFrame, labels: pd.DataFrame) -> None:
     s = context.network_summary(od, context.pair_exposure(panel), context.commuter_lookup(labels))
     assert s["trips"] == 130 and s["pairs"] == 4
-    assert s["commuter_pct"] == pytest.approx(66.7, abs=0.05)
+    assert s["commuter_pct"] == pytest.approx(61.5, abs=0.05)

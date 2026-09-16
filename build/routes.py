@@ -174,9 +174,9 @@ def write_corridor_loads(
             features.append({
                 "type": "Feature",
                 "geometry": {"type": "LineString", "coordinates": paths[0]},
-                "properties": {"c": l["commuter"], "n": l["non-commuter"], "u": l["unclassified"]},
+                "properties": {"c": l["commuter"], "n": l["non-commuter"]},
             })
-    maxima = {k: max((f["properties"][k] for f in features), default=0) for k in ("c", "n", "u")}
+    maxima = {k: max((f["properties"][k] for f in features), default=0) for k in ("c", "n")}
     fc = {"type": "FeatureCollection", "max": maxima, "features": features}
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(fc, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

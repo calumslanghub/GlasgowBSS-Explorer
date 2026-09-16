@@ -1,6 +1,7 @@
 """Tests for analysis.hourly on a handful of synthetic trips."""
 
 import pandas as pd
+import pytest
 
 from analysis import hourly
 
@@ -22,6 +23,8 @@ def test_add_local_hours_uses_uk_clock() -> None:
     assert t["start_hour"].tolist() == [8, 8, 17, 23]
     assert t["end_hour"].tolist() == [8, 9, 17, 0]
     assert t["start_date"].iloc[0] == "2019-06-01"
+    # 1 June 2019 was a Saturday; 10 January 2020 a Friday.
+    assert t["daytype"].tolist() == ["weekend", "weekend", "weekend", "weekday"]
 
 
 def test_hourly_role_counts_and_profile() -> None:
@@ -38,6 +41,11 @@ def test_hourly_role_counts_and_profile() -> None:
     assert prof["in"] == [0, 0, 0, 1]
     for o, i in zip(prof["out_pct"], prof["in_pct"]):
         assert o + i in (0.0, 100.0)
+    # Day-type slices: A's trips are all on the Saturday except C->A (Friday 23:00).
+    wk = hourly.hourly_profile(h, "A", hours=(8, 23), daytype="weekday")
+    assert wk["out"] == [0, 0] and wk["in"] == [0, 0]   # C->A ends at 00 local, not 23
+    we = hourly.hourly_profile(h, "A", hours=(8, 17), daytype="weekend")
+    assert we["out"] == [2, 0] and we["in"] == [0, 1]
 
 
 def test_combine_hourly_sums_chunks() -> None:
@@ -56,3 +64,20 @@ def test_first_trip_dates_across_roles() -> None:
     assert fd["C"] == "2019-06-01"  # first appears as a destination
     combined = hourly.combine_first_dates([fd, pd.Series({"A": "2018-01-01"})])
     assert combined["A"] == "2018-01-01"
+
+
+def test_daytype_od_counts_and_system_profile() -> None:
+    t = hourly.add_local_hours(_trips())
+    odc = hourly.combine_od_counts([hourly.daytype_od_counts(t.iloc[:2]), hourly.daytype_od_counts(t.iloc[2:])])
+    we = hourly.od_for_daytype(odc, "weekend").set_index(["origin", "destination"])["trips"]
+    assert we[("A", "B")] == 1 and we[("B", "A")] == 1
+    wd = hourly.od_for_daytype(odc, "weekday")
+    assert wd["trips"].sum() == 1 and set(wd.columns) == {"origin", "destination", "trips"}
+
+    days = hourly.day_counts("2019-06-01", "2019-06-07")   # Sat..Fri
+    assert days == {"weekday": 5, "weekend": 2}
+    prof = hourly.system_profile(hourly.hourly_role_counts(t), days, hours=(8, 17, 23))
+    assert prof["weekend"]["trips"] == [2, 1, 0] and prof["weekend"]["days"] == 2
+    assert prof["weekend"]["per_day"] == [1.0, 0.5, 0.0]
+    assert prof["weekday"]["trips"] == [0, 0, 1]
+    assert sum(prof["all"]["share_pct"]) == pytest.approx(100, abs=0.05)

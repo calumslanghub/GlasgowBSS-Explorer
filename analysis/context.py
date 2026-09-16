@@ -11,23 +11,43 @@ import numpy as np
 import pandas as pd
 
 EXPOSURE_TYPES: tuple[str, ...] = ("segregated", "lane", "shared", "mixed", "any")
+BUFFERS_M: tuple[int, ...] = (150, 250, 500, 750)
 
-# Covariates surfaced in the station profile, with display metadata.
-PROFILE_VARS: dict[str, dict] = {
-    "avg_age": {"label": "Average age", "unit": "yrs", "dp": 1},
-    "student_share": {"label": "Students", "unit": "%", "dp": 1, "pct": True},
-    "avg_cars_per_household": {"label": "Cars per household", "unit": "", "dp": 2},
-    "avg_health_score": {"label": "Health score (1-5)", "unit": "", "dp": 2},
-    "avg_nssec_score": {"label": "NS-SeC score", "unit": "", "dp": 1},
-    "cycling_distance_share": {
-        "label": "Commutes within cycling range",
-        "unit": "%",
-        "dp": 1,
-        "pct": True,
-    },
-    "over16pop": {"label": "Residents 16+", "unit": "", "dp": 0},
-    "workplace_pop": {"label": "Workplace population", "unit": "", "dp": 0},
+# Station-buffer covariates shipped to the neighbourhood maps, with display
+# metadata. ``pct`` values are stored as fractions in the source and shown x100.
+# ``source`` names the table column when it differs from the key.
+CENSUS_VARS: dict[str, dict] = {
+    "avg_age": {"label": "Average age", "unit": " yrs", "dp": 1,
+                "desc": "Mean age of residents in the buffer's data zones"},
+    "student_share": {"label": "Students", "unit": "%", "dp": 1, "pct": True,
+                      "desc": "Share of residents 16+ who are full-time students"},
+    "avg_cars_per_household": {"label": "Cars per household", "unit": "", "dp": 2,
+                               "desc": "Mean cars or vans per household"},
+    "avg_health_score": {"label": "Health score", "unit": "", "dp": 2,
+                         "desc": "Self-reported general health, 1 (very bad) to 5 (very good)"},
+    "avg_nssec_score": {"label": "NS-SeC score", "unit": "", "dp": 1,
+                        "desc": "Socio-economic classification, 1 (higher managerial) to 15 (never worked)"},
+    "cycling_distance_share_ext": {"label": "Commutes in cycling range", "unit": "%", "dp": 1,
+                                   "pct": True, "source": "cycling_distance_share_ext",
+                                   "desc": "Share of workers travelling under 10 km to work"},
+    "male_female_ratio": {"label": "Male : female ratio", "unit": "", "dp": 2,
+                          "desc": "Male residents per female resident"},
+    "over16pop": {"label": "Residents 16+", "unit": "", "dp": 0,
+                  "desc": "Resident population aged 16 and over"},
+    "workplace_pop": {"label": "Workplace population", "unit": "", "dp": 0,
+                      "desc": "People whose workplace is in the buffer"},
+    "n_on_premises": {"label": "Licensed premises", "unit": "", "dp": 0,
+                      "source": "n_on_premises", "heat": True,
+                      "desc": "Premises licensed for on-sales (pubs, bars, restaurants, clubs)"},
+    "premises_capacity": {"label": "Premises capacity", "unit": "", "dp": 0,
+                          "source": "total_capacity_on", "heat": True,
+                          "desc": "Summed licensed on-sales capacity"},
 }
+
+
+def _label(flag: bool | None) -> str:
+    """Display label for a commuter flag; unlabelled pairs are non-commuter."""
+    return "commuter" if flag else "non-commuter"
 
 
 def canonical_pair(a: pd.Series, b: pd.Series) -> tuple[pd.Series, pd.Series]:
@@ -97,18 +117,15 @@ def corridor_rows(
         lookup: Output of ``commuter_lookup``.
 
     Returns:
-        Rows with added ``commuter`` (``"commuter" | "non-commuter" | "unclassified"``)
-        and ``exp_any`` .. ``exp_mixed`` as percentages (1 dp).
+        Rows with added ``commuter`` (``"commuter" | "non-commuter"``) and
+        ``exp_any`` .. ``exp_mixed`` as percentages (1 dp).
     """
     exp = exposure.set_index(["origin", "destination"])
     out = []
     for r in top_rows:
         o, d = (station, r["station"]) if direction == "out" else (r["station"], station)
         row = dict(r)
-        flag = label_pair(o, d, lookup)
-        row["commuter"] = (
-            "unclassified" if flag is None else ("commuter" if flag else "non-commuter")
-        )
+        row["commuter"] = _label(label_pair(o, d, lookup))
         for t in EXPOSURE_TYPES:
             col = f"exp_{t}"
             val = exp[col].get((o, d), 0.0) if col in exp.columns else 0.0
@@ -149,10 +166,7 @@ def undirected_corridors(
             "trips": int(r.trips),
             "share": round(r.trips / total * 100, 2) if total else 0.0,
         }
-        flag = label_pair(station, r.partner, lookup)
-        row["commuter"] = (
-            "unclassified" if flag is None else ("commuter" if flag else "non-commuter")
-        )
+        row["commuter"] = _label(label_pair(station, r.partner, lookup))
         for c in cols:
             row[c] = round(float(getattr(r, c)) / r.trips * 100, 1) if r.trips else 0.0
         rows.append(row)
@@ -180,8 +194,9 @@ def commuter_share(
 ) -> dict[str, float]:
     """Share (%) of a station's trips on commuter-labelled pairs.
 
-    Returns ``commuter_pct`` (of classified trips), ``classified_pct`` (of all
-    trips) and ``commuter_pairs`` (count of distinct labelled-commuter partners).
+    Returns ``commuter_pct`` (of all trips; unlabelled pairs count as
+    non-commuter), ``classified_pct`` (share of trips on pairs the k-means step
+    labelled at all) and ``commuter_pairs`` (distinct commuter partners).
     """
     sub = od[(od["origin"] == station) | (od["destination"] == station)]
     flags = [label_pair(o, d, lookup) for o, d in zip(sub["origin"], sub["destination"])]
@@ -196,44 +211,115 @@ def commuter_share(
         if f is True:
             partners.add(d if o == station else o)
     return {
-        "commuter_pct": round(commuter / classified * 100, 1) if classified else 0.0,
+        "commuter_pct": round(commuter / total * 100, 1) if total else 0.0,
         "classified_pct": round(classified / total * 100, 1) if total else 0.0,
         "commuter_pairs": len(partners),
     }
 
 
-def station_profile(
+def census_table(
     station_vars: pd.DataFrame,
     premises: pd.DataFrame,
-    station: str,
-    buffer_m: int = 250,
-) -> dict[str, float | None]:
-    """Census-buffer covariates and licensed premises for one station.
+    stations: list[str],
+    buffers: tuple[int, ...] = BUFFERS_M,
+) -> dict[str, dict[int, dict[str, float | None]]]:
+    """Every CENSUS_VARS value per station per buffer radius.
 
-    Returns a flat dict of the PROFILE_VARS keys plus ``n_on_premises`` and
-    ``premises_capacity``; missing values are ``None``.
+    Args:
+        station_vars: ``station_independent_variables`` rows.
+        premises: ``station_on_premises`` rows.
+        stations: Station names to include (missing rows give ``None`` values).
+        buffers: Buffer radii (m) to include.
+
+    Returns:
+        ``{station: {buffer_m: {var: value}}}`` with ``pct`` variables scaled to
+        percent and every value rounded to its display precision.
     """
-    sv = station_vars[
-        (station_vars["station_id"] == station) & (station_vars["buffer_m"] == buffer_m)
-    ]
-    pr = premises[(premises["station_id"] == station) & (premises["buffer_m"] == buffer_m)]
-    out: dict[str, float | None] = {}
-    for key, meta in PROFILE_VARS.items():
-        if len(sv) and key in sv.columns and pd.notna(sv.iloc[0][key]):
-            val = float(sv.iloc[0][key])
-            if meta.get("pct"):
-                val *= 100
-            out[key] = round(val, meta["dp"])
-        else:
-            out[key] = None
-    out["n_on_premises"] = int(pr.iloc[0]["n_on_premises"]) if len(pr) else None
-    out["premises_capacity"] = (
-        int(pr.iloc[0]["total_capacity_on"])
-        if len(pr) and pd.notna(pr.iloc[0]["total_capacity_on"])
-        else None
-    )
-    out["buffer_m"] = buffer_m
+    merged = station_vars.merge(premises, on=["station_id", "buffer_m"], how="left")
+    merged = merged.set_index(["station_id", "buffer_m"]).sort_index()
+    out: dict[str, dict[int, dict[str, float | None]]] = {}
+    for s in stations:
+        out[s] = {}
+        for b in buffers:
+            row = merged.loc[(s, b)] if (s, b) in merged.index else None
+            vals: dict[str, float | None] = {}
+            for key, meta in CENSUS_VARS.items():
+                col = meta.get("source", key)
+                v = None if row is None or col not in row.index else row[col]
+                if v is None or pd.isna(v):
+                    vals[key] = None
+                    continue
+                v = float(v) * (100 if meta.get("pct") else 1)
+                vals[key] = round(v, meta["dp"]) if meta["dp"] else int(round(v))
+            out[s][b] = vals
     return out
+
+
+def variable_ranking(
+    table: dict[str, dict[int, dict[str, float | None]]],
+    var: str,
+    buffer_m: int,
+    n: int = 10,
+) -> dict:
+    """Highest / lowest stations and summary statistics for one variable.
+
+    Returns:
+        ``{"top": [{station, value}], "bottom": [...], "min", "max", "mean",
+        "median", "q05", "q95", "n"}`` (``bottom`` ascending, ``top``
+        descending). Stations with a ``None`` value are ignored.
+    """
+    vals = [
+        (s, buf[buffer_m][var])
+        for s, buf in table.items()
+        if buffer_m in buf and buf[buffer_m].get(var) is not None
+    ]
+    if not vals:
+        return {"top": [], "bottom": [], "min": None, "max": None, "mean": None,
+                "median": None, "q05": None, "q95": None, "n": 0}
+    vals.sort(key=lambda t: (-t[1], t[0]))
+    arr = np.array([v for _, v in vals], dtype=float)
+    rows = [{"station": s, "value": v} for s, v in vals]
+    return {
+        "top": rows[:n],
+        "bottom": list(reversed(rows[-n:])),
+        "min": float(arr.min()),
+        "max": float(arr.max()),
+        "mean": round(float(arr.mean()), 3),
+        "median": round(float(np.median(arr)), 3),
+        "q05": round(float(np.quantile(arr, 0.05)), 3),
+        "q95": round(float(np.quantile(arr, 0.95)), 3),
+        "n": int(len(arr)),
+    }
+
+
+def population_balance(
+    table: dict[str, dict[int, dict[str, float | None]]], buffer_m: int
+) -> list[dict]:
+    """Residents vs workplace population per station for one buffer radius.
+
+    Returns:
+        Rows ``{station, residents, workplace, total, workplace_pct, log_ratio}``
+        sorted by ``workplace_pct`` descending. ``workplace_pct`` is the share of
+        (residents + workplace) that is workplace population; ``log_ratio`` is
+        ``ln((workplace + 1) / (residents + 1))`` (positive = job-rich).
+    """
+    rows = []
+    for s, buf in table.items():
+        v = buf.get(buffer_m) or {}
+        res, wp = v.get("over16pop"), v.get("workplace_pop")
+        if res is None or wp is None:
+            continue
+        total = res + wp
+        rows.append({
+            "station": s,
+            "residents": int(res),
+            "workplace": int(wp),
+            "total": int(total),
+            "workplace_pct": round(wp / total * 100, 1) if total else 0.0,
+            "log_ratio": round(float(np.log((wp + 1) / (res + 1))), 3),
+        })
+    rows.sort(key=lambda r: (-r["workplace_pct"], r["station"]))
+    return rows
 
 
 def network_summary(
@@ -252,6 +338,6 @@ def network_summary(
         "trips": total,
         "pairs": int(len(od)),
         "exp_any_pct": round(exp_any, 1),
-        "commuter_pct": round(commuter / classified * 100, 1) if classified else 0.0,
+        "commuter_pct": round(commuter / total * 100, 1) if total else 0.0,
         "classified_pct": round(classified / total * 100, 1) if total else 0.0,
     }

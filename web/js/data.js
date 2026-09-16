@@ -7,12 +7,13 @@
 var DATA = {
   manifest: null,
   files: {},          // file name -> parsed JSON
-  hourlyMax: 1,       // largest out+in for any station in any hour (standard-day scale)
+  hourlyMax: 1,       // largest per-day (out+in) rate for any station, hour and day type
   loadedAt: null
 };
 
 // Map layers that are not manifest layers but the map always needs.
-var MAP_FILES = ['stations.json', 'routes.json', 'infra.geojson', 'corridor_load.geojson', 'segregated.geojson'];
+var MAP_FILES = ['stations.json', 'routes.json', 'infra.geojson', 'corridor_load.geojson', 'segregated.geojson',
+                 'premises.json', 'census_by_station.json', 'census_summary.json', 'system_profile.json'];
 
 function fetchJSON(path) {
   return fetch(path, { cache: 'no-cache' }).then(function (r) {
@@ -27,25 +28,42 @@ function loadAll() {
     DATA.manifest = m;
     var names = {};
     MAP_FILES.forEach(function (f) { names[f] = 1; });
-    Object.values(m.layers).forEach(function (l) { names[l.file] = 1; });
+    Object.values(m.layers).forEach(function (l) { if (l.file) names[l.file] = 1; });
+    Object.values(m.controls || {}).forEach(function (c) { if (c.options_from) names[c.options_from.file] = 1; });
     return Promise.all(Object.keys(names).map(function (f) {
       return fetchJSON('data/' + f).then(function (json) { DATA.files[f] = json; });
     }));
   }).then(function () {
+    // Standard-day marker scale: trips per day so weekdays and weekends compare.
     var od = DATA.files['od_by_station.json'] || {};
-    Object.values(od).forEach(function (e) {
-      (e.hourly || []).forEach(function (h) { DATA.hourlyMax = Math.max(DATA.hourlyMax, h.out + h.in); });
+    Object.keys(od).forEach(function (id) {
+      ['all', 'weekday', 'weekend'].forEach(function (dt) {
+        var days = dayCount(dt);
+        ((od[id][dt] || {}).hourly || []).forEach(function (h) {
+          DATA.hourlyMax = Math.max(DATA.hourlyMax, (h.out + h.in) / days);
+        });
+      });
     });
     DATA.loadedAt = new Date();
     return DATA;
   });
 }
 
+// Number of calendar days of a day type in the study (from system_profile.json).
+function dayCount(daytype) {
+  var k = (DATA.files['system_profile.json'] || {}).kpi || {};
+  var wd = k.days_weekday || 1, we = k.days_weekend || 1;
+  return daytype === 'weekday' ? wd : daytype === 'weekend' ? we : wd + we;
+}
+
 // Resolve the data a layer should render for the current state.
-//   scope: station     -> files[file][S.station][field?]
-//   scope: global      -> files[file][field?]
-//   field_from_state   -> an extra hop through files[file][S[<key>]] first
+//   scope: station     -> files[file][S.station]
+//   scope: global      -> files[file]
+//   path               -> ordered hops; "$key" reads state[key]
+//   field_from_state   -> hop(s) through state values (string or list), then
+//   field              -> final hop(s), dotted ("compare.dest")
 function layerData(layer, state) {
+  if (!layer.file) return null;
   var root = DATA.files[layer.file];
   if (!root) return null;
   var node = root;
@@ -54,12 +72,81 @@ function layerData(layer, state) {
     node = root[state.station];
     if (!node) return null;
   }
-  if (layer.field_from_state) {
-    node = node[state[layer.field_from_state]];
-    if (!node) return null;
+  var hops = [];
+  if (layer.path) hops = layer.path.slice();
+  else {
+    [].concat(layer.field_from_state || []).forEach(function (k) { hops.push('$' + k); });
+    if (layer.field) hops = hops.concat(String(layer.field).split('.'));
   }
-  if (layer.field) node = node[layer.field];
+  for (var i = 0; i < hops.length; i++) {
+    var h = hops[i];
+    var key = h.charAt(0) === '$' ? state[h.slice(1)] : h;
+    if (node === null || node === undefined) return null;
+    node = node[key];
+  }
   return node === undefined ? null : node;
+}
+
+// Visibility rule: every key in `cond` must match state. `station: false`
+// means "no station selected", `station: true` "a station is selected".
+function showIf(cond, state) {
+  if (!cond) return true;
+  return Object.keys(cond).every(function (k) {
+    if (k === 'station') return !!state.station === !!cond[k];
+    return String(state[k]) === String(cond[k]);
+  });
+}
+
+// ── Controls (manifest.controls) ─────────────────────────────────────────────
+function controlOptions(ctrl) {
+  if (ctrl.options) return ctrl.options.map(function (o) { return { value: String(o.value), label: o.label, colour: o.colour }; });
+  if (ctrl.options_from) {
+    var src = (DATA.files[ctrl.options_from.file] || {})[ctrl.options_from.field] || {};
+    return Object.keys(src).map(function (k) { return { value: k, label: src[k].label || k, title: src[k].desc }; });
+  }
+  return [];
+}
+function controlFor(stateKey) {
+  var cs = DATA.manifest.controls || {};
+  var name = Object.keys(cs).find(function (n) { return cs[n].state === stateKey; });
+  return name ? cs[name] : null;
+}
+// Label of the active option of the control bound to a state key ('' if none).
+function controlLabel(stateKey, state) {
+  var ctrl = controlFor(stateKey);
+  if (!ctrl) return '';
+  var cur = String(state[stateKey]);
+  var o = controlOptions(ctrl).find(function (x) { return x.value === cur; });
+  return o ? o.label : cur;
+}
+// "{daytype}" style placeholders in titles -> the active control label.
+function fmtTitle(str, state) {
+  if (!str || !state) return str || '';
+  return String(str).replace(/\{(\w+)\}/g, function (m, k) {
+    var lab = controlLabel(k, state);
+    return lab || m;
+  });
+}
+
+// ── Census helpers (neighbourhood maps) ──────────────────────────────────────
+function censusVarMeta() {
+  var v = ((DATA.files['census_summary.json'] || {}).vars || {})[S.census_var];
+  return v || { label: S.census_var, unit: '', dp: 1 };
+}
+function censusRow(id) {
+  var e = (DATA.files['census_by_station.json'] || {})[id];
+  return e ? e[S.buffer] || null : null;
+}
+function censusValue(id) {
+  var r = censusRow(id);
+  var v = r ? r[S.census_var] : null;
+  return v === undefined ? null : v;
+}
+// Colour range for the choropleth: 5th to 95th percentile of the variable.
+function censusScale() {
+  var rk = (((DATA.files['census_summary.json'] || {}).rank || {})[S.census_var] || {})[S.buffer];
+  if (!rk || rk.n === 0) return null;
+  return { lo: rk.q05, hi: rk.q95, rank: rk };
 }
 
 function stations() { return DATA.files['stations.json'] || []; }
@@ -68,8 +155,14 @@ function routeFor(a, b) {
   var r = DATA.files['routes.json'];
   return r && r.pairs ? (r.pairs[a + '|' + b] || r.pairs[b + '|' + a] || null) : null;
 }
-function hourlyFor(id, hour) {
+function hourlyFor(id, hour, daytype) {
   var e = (DATA.files['od_by_station.json'] || {})[id];
-  if (!e || !e.hourly) return null;
-  return e.hourly.find(function (h) { return h.hour === hour; }) || null;
+  var block = e ? e[daytype || S.daytype] : null;
+  if (!block || !block.hourly) return null;
+  return block.hourly.find(function (h) { return h.hour === hour; }) || null;
+}
+// Trips per day (starting + ending) at a station in an hour of the active day type.
+function hourRate(id, hour) {
+  var h = hourlyFor(id, hour);
+  return h ? (h.out + h.in) / dayCount(S.daytype) : 0;
 }

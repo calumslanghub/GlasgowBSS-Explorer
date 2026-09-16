@@ -13,8 +13,29 @@ infra:
 
 corridor:
   commuter: "#741e6d"      # purple
-  "non-commuter": "#28a197"  # teal
-  unclassified: "#b3b3b3"  # grey
+  "non-commuter": "#28a197"  # teal (unlabelled pairs are counted here)
+
+daytype:
+  weekday: "#4b3f8f"       # indigo
+  weekend: "#e8871e"       # orange
+
+# Sequential ramp for the census choropleth (low -> mid -> high).
+scale:
+  low: "#e0ecf4"
+  mid: "#6497c7"
+  high: "#023858"
+
+# Residents vs workplace population.
+balance:
+  residents: "#5eb135"     # Cycle green
+  workplace: "#741e6d"     # purple (where commuters go)
+
+# Coefficient-plot groups.
+regression:
+  gravity: "#5e5e5e"
+  infrastructure: "#1a7032"
+  neighbourhood: "#0065bd"
+  commuter: "#741e6d"
 
 ui:
   accent: "#0065bd"

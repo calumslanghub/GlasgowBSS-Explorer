@@ -8,25 +8,166 @@
 #   bar   - Chart.js bar. meta: orientation (horizontal|vertical), series
 #           ([{key,label,colour}]) OR value_key + colour, label_key, stacked,
 #           percent (normalise each category to 100), colour_key + colour_map
-#           (per-bar colour by a category field), x_key (for vertical charts).
-#   line  - Chart.js multi-line time series. meta: x_key, series, fill, y_label,
-#           marker (name of a state value to draw a vertical guide at).
-#   kpi   - stat tiles / key-value grid. meta: items [{key,label,unit,dp}].
+#           (per-bar colour by a category field), x_key (for vertical charts),
+#           intervals ([{lo_key,hi_key,point_key,label,colour,thickness}] ->
+#           floating bars, e.g. a coefficient plot), dumbbell ({a:{key,label,
+#           colour}, b:{...}} -> two points joined by a bar), ref_line (x value
+#           for a dashed guide), tip_keys ([{key,label,dp,unit}] extra tooltip
+#           lines), marker (state key highlighted on the x axis).
+#   line  - Chart.js multi-line series. meta: x_key, x_type (date|number),
+#           x_unit, x_label, series, fill, stacked, secondary, y_label, unit,
+#           ref_line, marker (name of a state value to draw a vertical guide at).
+#   kpi   - stat tiles / key-value grid. meta: items [{key,label,unit,dp}] or
+#           items_from {file, field} (metadata object {key: {label,unit,dp}}),
+#           at_marker (index a timeline by a state value), compact.
+#   text  - a short narrative card. meta: body (HTML; {key} placeholders are
+#           filled from the layer's data object, {summary.key} from the build
+#           summary).
 #
-# Data lookup:
-#   scope: station  -> files[file][S.station][field]   (needs a selection)
-#   scope: global   -> files[file][field]
-#   field_from_state: <state key> -> files[file][S[<state key>]] (e.g. seg_mode)
+# Data lookup (web/js/data.js layerData):
+#   scope: station     -> files[file][S.station]
+#   scope: global      -> files[file]
+#   field_from_state   -> one or more extra hops through S[<key>] (string|list)
+#   field              -> final hop(s); dotted paths allowed ("compare.dest")
+#   path               -> explicit ordered hops instead of the two above; a
+#                         "$key" hop reads S[key] (e.g. [rank, $census_var, $buffer])
+#   Titles and subtitles may use {daytype}, {buffer}, {census_var} placeholders
+#   which are replaced by the active control's option label.
+#
+# Visibility: `show_if` is a map of state conditions that must all hold, e.g.
+#   { station: false } (no station selected), { nbhd_mode: buffers }.
+#   Station-scope layers are skipped without a station regardless.
+
+controls:
+  # Rendered in the map legend; each sets one state key and re-renders.
+  daytype:
+    label: "Days"
+    state: daytype
+    widget: radio
+    hash: day
+    options:
+      - { value: all, label: "All days", colour: "$ui.station" }
+      - { value: weekday, label: "Weekdays", colour: "$daytype.weekday" }
+      - { value: weekend, label: "Weekends", colour: "$daytype.weekend" }
+  nbhd_mode:
+    label: "Show"
+    state: nbhd_mode
+    widget: radio
+    hash: mode
+    options:
+      - { value: buffers, label: "Census buffers", colour: "$scale.mid" }
+      - { value: bars, label: "Residents vs workplace", colour: "$balance.workplace" }
+  census_var:
+    label: "Variable"
+    state: census_var
+    widget: select
+    hash: var
+    options_from: { file: census_summary.json, field: vars }
+    show_if: { nbhd_mode: buffers }
+  buffer:
+    label: "Buffer"
+    state: buffer
+    widget: radio
+    hash: buf
+    options:
+      - { value: "150", label: "150 m" }
+      - { value: "250", label: "250 m" }
+      - { value: "500", label: "500 m" }
+      - { value: "750", label: "750 m" }
+  segmode:
+    label: "Segregated"
+    state: seg_mode
+    widget: radio
+    hash: seg
+    options:
+      - { value: all, label: "All trips", colour: "$infra.segregated" }
+      - { value: commuter, label: "Commuter corridors only", colour: "$corridor.commuter" }
+    note: "line width = trips that followed the segment"
 
 layers:
-  # ── Phase 1: station flows ────────────────────────────────────────────────
+  # ── 1 Station flows ───────────────────────────────────────────────────────
+  flows_intro:
+    file: system_profile.json
+    scope: global
+    field: kpi
+    render: text
+    show_if: { station: false }
+    title: "How Glasgow used its bike share"
+    body: >-
+      {summary.trips} trips between {summary.stations} nextbike stations, Sep 2017 to Apr 2024.
+      Weekdays carry about {weekday_per_day} trips a day with a double commuting peak; weekend
+      days carry {weekend_per_day}, spread across the afternoon. Click a station to see where
+      its riders come from and go to, and switch between weekdays and weekends to watch the
+      pattern change. Press play under the map for a standard day.
+
+  system_kpi:
+    file: system_profile.json
+    scope: global
+    field: kpi
+    render: kpi
+    show_if: { station: false }
+    title: "Weekdays vs weekends"
+    items:
+      - { key: weekday_per_day, label: "Trips per weekday", dp: 0, colour: "$daytype.weekday" }
+      - { key: weekend_per_day, label: "Trips per weekend day", dp: 0, colour: "$daytype.weekend" }
+      - { key: weekday_peak_hour, label: "Weekday peak hour", dp: 0, unit: ":00", colour: "$daytype.weekday" }
+      - { key: weekend_peak_hour, label: "Weekend peak hour", dp: 0, unit: ":00", colour: "$daytype.weekend" }
+
+  system_hourly:
+    file: system_profile.json
+    scope: global
+    field: rows
+    render: bar
+    orientation: vertical
+    show_if: { station: false }
+    title: "A standard weekday and weekend day"
+    subtitle: "Average trips started per hour across the network, 06:00-23:00"
+    x_key: hour
+    x_suffix: ":00"
+    marker: hour
+    series:
+      - { key: weekday, label: "Weekday", colour: "$daytype.weekday" }
+      - { key: weekend, label: "Weekend day", colour: "$daytype.weekend" }
+    y_label: "trips per day"
+
+  system_shift:
+    file: system_profile.json
+    scope: global
+    field: shift
+    render: bar
+    orientation: horizontal
+    show_if: { station: false }
+    title: "Weekday hubs, weekend hotspots"
+    subtitle: "Share of all trips starting or ending at each station; the busiest 10 on weekdays and at weekends, sorted by the shift towards weekends"
+    label_key: station
+    unit: "%"
+    dumbbell:
+      a: { key: weekday_share, label: "Weekdays", colour: "$daytype.weekday" }
+      b: { key: weekend_share, label: "Weekends", colour: "$daytype.weekend" }
+    tip_keys:
+      - { key: weekday_trips, label: "Weekday trips", dp: 0 }
+      - { key: weekend_trips, label: "Weekend trips", dp: 0 }
+
+  od_split_kpi:
+    file: od_by_station.json
+    scope: station
+    field_from_state: daytype
+    render: kpi
+    title: "Origin vs destination, {daytype}"
+    items:
+      - { key: out_trips, label: "Trips starting here", dp: 0 }
+      - { key: in_trips, label: "Trips ending here", dp: 0 }
+      - { key: out_share, label: "Origin share", unit: "%", dp: 1, colour: "$roles.origin" }
+      - { key: in_share, label: "Destination share", unit: "%", dp: 1, colour: "$roles.destination" }
+
   od_top_destinations:
     file: od_by_station.json
     scope: station
+    field_from_state: daytype
     field: top_dest
     render: bar
     orientation: horizontal
-    title: "Top 10 destinations"
+    title: "Top 10 destinations, {daytype}"
     subtitle: "Where trips starting here go"
     label_key: station
     value_key: trips
@@ -37,10 +178,11 @@ layers:
   od_top_origins:
     file: od_by_station.json
     scope: station
+    field_from_state: daytype
     field: top_orig
     render: bar
     orientation: horizontal
-    title: "Top 10 origins"
+    title: "Top 10 origins, {daytype}"
     subtitle: "Where trips ending here started"
     label_key: station
     value_key: trips
@@ -48,15 +190,50 @@ layers:
     colour: "$roles.destination"
     map_lines: { role: destination, colour: "$roles.destination" }
 
+  od_compare_dest:
+    file: od_by_station.json
+    scope: station
+    field: compare.dest
+    render: bar
+    orientation: horizontal
+    title: "Destinations: weekday vs weekend"
+    subtitle: "Share of trips starting here that end at each partner; the top 10 of each day type, sorted by the shift towards weekends"
+    label_key: station
+    unit: "%"
+    dumbbell:
+      a: { key: weekday_share, label: "Weekdays", colour: "$daytype.weekday" }
+      b: { key: weekend_share, label: "Weekends", colour: "$daytype.weekend" }
+    tip_keys:
+      - { key: weekday_trips, label: "Weekday trips", dp: 0 }
+      - { key: weekend_trips, label: "Weekend trips", dp: 0 }
+
+  od_compare_orig:
+    file: od_by_station.json
+    scope: station
+    field: compare.orig
+    render: bar
+    orientation: horizontal
+    title: "Origins: weekday vs weekend"
+    subtitle: "Share of trips ending here that started at each partner; the top 10 of each day type, sorted by the shift towards weekends"
+    label_key: station
+    unit: "%"
+    dumbbell:
+      a: { key: weekday_share, label: "Weekdays", colour: "$daytype.weekday" }
+      b: { key: weekend_share, label: "Weekends", colour: "$daytype.weekend" }
+    tip_keys:
+      - { key: weekday_trips, label: "Weekday trips", dp: 0 }
+      - { key: weekend_trips, label: "Weekend trips", dp: 0 }
+
   od_hourly_split:
     file: od_by_station.json
     scope: station
+    field_from_state: daytype
     field: hourly
     render: bar
     orientation: vertical
     stacked: true
     percent: true
-    title: "Origin vs destination by hour"
+    title: "Origin vs destination by hour, {daytype}"
     subtitle: "Share of trips starting (blue) vs ending (red) here, 06:00-23:00"
     x_key: hour
     x_suffix: ":00"
@@ -66,18 +243,125 @@ layers:
       - { key: in, label: "Destination (trips end here)", colour: "$roles.destination" }
     y_label: "% of trips"
 
-  od_split_kpi:
-    file: od_by_station.json
-    scope: station
-    render: kpi
-    title: "All-day split"
-    items:
-      - { key: out_trips, label: "Trips starting here", dp: 0 }
-      - { key: in_trips, label: "Trips ending here", dp: 0 }
-      - { key: out_share, label: "Origin share", unit: "%", dp: 1, colour: "$roles.origin" }
-      - { key: in_share, label: "Destination share", unit: "%", dp: 1, colour: "$roles.destination" }
+  # ── 2 Neighbourhoods ──────────────────────────────────────────────────────
+  nbhd_intro:
+    scope: global
+    render: text
+    show_if: { station: false }
+    title: "Who lives and works around each station"
+    body: >-
+      The dissertation described every station by the census data zones within 150 to 750 m
+      of it (age, students, cars, health, socio-economic class, commuting distance) plus the
+      pubs, bars and restaurants licensed nearby. These are the controls in the regression on
+      the last page. Pick a variable to colour the station buffers, or switch to the
+      residents-versus-workplace view to see which stations sit in job-rich and which in
+      residential areas.
 
-  # ── Phase 2: infrastructure timeline ──────────────────────────────────────
+  census_kpi:
+    file: census_summary.json
+    scope: global
+    path: [rank, $census_var, $buffer]
+    render: kpi
+    show_if: { station: false, nbhd_mode: buffers }
+    title: "{census_var}, {buffer} buffer"
+    items:
+      - { key: median, label: "Median station", dp: 2 }
+      - { key: mean, label: "Mean", dp: 2 }
+      - { key: min, label: "Lowest", dp: 2 }
+      - { key: max, label: "Highest", dp: 2 }
+
+  census_top:
+    file: census_summary.json
+    scope: global
+    path: [rank, $census_var, $buffer, top]
+    render: bar
+    orientation: horizontal
+    show_if: { station: false, nbhd_mode: buffers }
+    title: "Highest: {census_var}"
+    label_key: station
+    value_key: value
+    colour: "$scale.high"
+
+  census_bottom:
+    file: census_summary.json
+    scope: global
+    path: [rank, $census_var, $buffer, bottom]
+    render: bar
+    orientation: horizontal
+    show_if: { station: false, nbhd_mode: buffers }
+    title: "Lowest: {census_var}"
+    label_key: station
+    value_key: value
+    colour: "$scale.low"
+
+  balance_kpi:
+    file: census_summary.json
+    scope: global
+    path: [balance_kpi, $buffer]
+    render: kpi
+    show_if: { station: false, nbhd_mode: bars }
+    title: "Residents vs workplace population, {buffer} buffer"
+    items:
+      - { key: residents, label: "Residents 16+ (all buffers)", dp: 0, colour: "$balance.residents" }
+      - { key: workplace, label: "Workplace population", dp: 0, colour: "$balance.workplace" }
+      - { key: job_rich, label: "Job-rich stations (workplace > residents)", dp: 0 }
+      - { key: residential, label: "Residential stations", dp: 0 }
+
+  balance_top:
+    file: census_summary.json
+    scope: global
+    path: [balance, $buffer]
+    render: bar
+    orientation: horizontal
+    show_if: { station: false, nbhd_mode: bars }
+    title: "Most job-rich stations"
+    subtitle: "Residents aged 16+ vs people working within the buffer"
+    label_key: station
+    head: 10
+    dumbbell:
+      a: { key: residents, label: "Residents 16+", colour: "$balance.residents" }
+      b: { key: workplace, label: "Workplace population", colour: "$balance.workplace" }
+    tip_keys:
+      - { key: workplace_pct, label: "Workplace share", dp: 1, unit: "%" }
+
+  balance_bottom:
+    file: census_summary.json
+    scope: global
+    path: [balance, $buffer]
+    render: bar
+    orientation: horizontal
+    show_if: { station: false, nbhd_mode: bars }
+    title: "Most residential stations"
+    label_key: station
+    tail: 10
+    dumbbell:
+      a: { key: residents, label: "Residents 16+", colour: "$balance.residents" }
+      b: { key: workplace, label: "Workplace population", colour: "$balance.workplace" }
+    tip_keys:
+      - { key: workplace_pct, label: "Workplace share", dp: 1, unit: "%" }
+
+  station_profile:
+    file: census_by_station.json
+    scope: station
+    field_from_state: buffer
+    render: kpi
+    compact: true
+    title: "Neighbourhood, {buffer} buffer"
+    subtitle: "Census 2022 data zones intersecting the buffer; licensed premises within it"
+    items_from: { file: census_summary.json, field: vars }
+
+  # ── 3 Cycle infrastructure ────────────────────────────────────────────────
+  infra_intro:
+    scope: global
+    render: text
+    title: "Cycle infrastructure arrived while the system was running"
+    body: >-
+      Glasgow City Council's open cycle-route network, dated segment by segment from scheme
+      opening records; anything undated was already in place at the study start. Drag the
+      slider or press play to watch routes and docking stations appear. The regression uses
+      each station pair's exposure to this network, so a route that gained a segregated lane
+      part-way through the study changes exposure for every trip after that date.
+
   infra_km_timeline:
     file: infra_timeline.json
     scope: global
@@ -96,6 +380,7 @@ layers:
     secondary:
       { key: stations, label: "Stations live", colour: "$ui.station", y_label: "stations" }
     y_label: "km"
+    unit: " km"
 
   infra_state_kpi:
     file: infra_timeline.json
@@ -110,11 +395,26 @@ layers:
       - { key: shared, label: "Shared", unit: " km", dp: 1, colour: "$infra.shared" }
       - { key: stations, label: "Stations live", dp: 0 }
 
-  # ── Phase 3: corridors & context ──────────────────────────────────────────
+  # ── 4 Commuter corridors ──────────────────────────────────────────────────
+  corridors_intro:
+    file: corridor_network.json
+    scope: global
+    render: text
+    show_if: { station: false }
+    title: "Commuter and non-commuter corridors"
+    body: >-
+      A k-means clustering of each station pair's pre-COVID timing (peak share, weekday to
+      weekend ratio, direction reversal, midday share) separated commuter corridors from
+      everything else. {commuter_pct}% of all trips run on commuter corridors. Pairs with too
+      few trips to classify are counted as non-commuter, as in the regression. Street width
+      shows how many trips' shortest bike route used that street; click a station for its own
+      corridors.
+
   corridor_network_kpi:
     file: corridor_network.json
     scope: global
     render: kpi
+    show_if: { station: false }
     title: "Corridors across the network"
     subtitle: "k-means label of each station pair (pre-COVID, pairs with 30+ trips)"
     items:
@@ -122,8 +422,8 @@ layers:
       - { key: noncommuter_pct, label: "Trips on non-commuter corridors", unit: "%", dp: 1, colour: "$corridor.non-commuter" }
       - { key: commuter_pairs, label: "Commuter pairs", dp: 0 }
       - { key: noncommuter_pairs, label: "Non-commuter pairs", dp: 0 }
-      - { key: unclassified_pct, label: "Trips on unclassified pairs", unit: "%", dp: 1, colour: "$corridor.unclassified" }
-      - { key: unclassified_pairs, label: "Unclassified pairs", dp: 0 }
+      - { key: exp_any_pct, label: "Route km on cycle infrastructure", unit: "%", dp: 1, colour: "$infra.lane" }
+      - { key: classified_pct, label: "Trips on pairs the clustering labelled", unit: "%", dp: 1 }
 
   commuter_kpi:
     file: context_by_station.json
@@ -132,9 +432,9 @@ layers:
     title: "Commuter character"
     items:
       - { key: commuter_pct, label: "Trips on commuter corridors", unit: "%", dp: 1, colour: "$corridor.commuter" }
-      - { key: classified_pct, label: "Trips on classified pairs", unit: "%", dp: 1 }
       - { key: commuter_pairs, label: "Commuter partners", dp: 0 }
       - { key: exp_any, label: "Route on infrastructure", unit: "%", dp: 1, colour: "$infra.lane" }
+      - { key: classified_pct, label: "Trips on labelled pairs", unit: "%", dp: 1 }
 
   corridor_top:
     file: context_by_station.json
@@ -180,26 +480,90 @@ layers:
       - { key: shared, label: "Shared path/footway", colour: "$infra.shared" }
       - { key: mixed, label: "Mixed traffic", colour: "$infra.mixed" }
 
-  station_profile:
-    file: context_by_station.json
-    scope: station
-    field: profile
-    render: kpi
-    title: "Neighbourhood (250 m census buffer)"
-    compact: true
-    items:
-      - { key: avg_age, label: "Average age", unit: " yrs", dp: 1 }
-      - { key: student_share, label: "Students", unit: "%", dp: 1 }
-      - { key: avg_cars_per_household, label: "Cars / household", dp: 2 }
-      - { key: avg_health_score, label: "Health score (1-5)", dp: 2 }
-      - { key: avg_nssec_score, label: "NS-SeC score", dp: 1 }
-      - { key: cycling_distance_share, label: "Commutes in cycling range", unit: "%", dp: 1 }
-      - { key: over16pop, label: "Residents 16+", dp: 0 }
-      - { key: workplace_pop, label: "Workplace population", dp: 0 }
-      - { key: n_on_premises, label: "Licensed premises", dp: 0 }
-      - { key: premises_capacity, label: "Premises capacity", dp: 0 }
+  # ── 5 Regression ──────────────────────────────────────────────────────────
+  regression_intro:
+    file: regression.json
+    scope: global
+    field: headline
+    render: text
+    title: "Does cycle infrastructure attract bike-share trips?"
+    body: >-
+      A negative-binomial gravity model of trips between every pair of stations
+      ({n_pairs} pairs, offset for the days both were live). Distance and the destination's
+      workplace population behave as gravity predicts. Segregated infrastructure on its own
+      has a small, uncertain effect, but on commuter corridors the effect is large: a
+      commuter pair whose whole route is segregated is predicted to carry {irr_full}x the
+      trips of one with none (95% CI {irr_lo} to {irr_hi}). At the median commuter exposure
+      that is a {irr_median}x uplift. The map shows the segregated segments and how many
+      trips' routes followed them.
 
-  # ── Phase 4: segregated infrastructure ────────────────────────────────────
+  regression_headline:
+    file: regression.json
+    scope: global
+    field: headline
+    render: kpi
+    title: "Headline results"
+    items:
+      - { key: irr_full, label: "Commuter pair, fully segregated route: trip rate ratio", dp: 2, unit: "x", colour: "$corridor.commuter" }
+      - { key: irr_median, label: "At median commuter exposure (10% of route)", dp: 2, unit: "x", colour: "$corridor.commuter" }
+      - { key: commuter_irr, label: "Commuter pair vs other, same exposure", dp: 2, unit: "x" }
+      - { key: pearson_r, label: "Pearson r, predicted vs observed", dp: 2 }
+
+  regression_irr:
+    file: regression.json
+    scope: global
+    field: irr_curve
+    render: line
+    title: "Segregated infrastructure and trips, by corridor type"
+    subtitle: "Predicted trip rate relative to an identical pair with no segregated route"
+    x_key: x_pct
+    x_type: number
+    x_unit: "%"
+    x_label: "share of route on segregated infrastructure"
+    y_label: "trip rate ratio"
+    unit: "x"
+    ref_line: 1
+    series:
+      - { key: commuter, label: "Commuter pairs", colour: "$corridor.commuter" }
+      - { key: non_commuter, label: "Non-commuter pairs", colour: "$corridor.non-commuter" }
+
+  regression_forest:
+    file: regression.json
+    scope: global
+    field: forest
+    render: bar
+    orientation: horizontal
+    title: "Coefficient plot"
+    subtitle: "Log trip-rate effect per unit with 95% intervals: thin grey = naive, thick = two-way clustered by origin and destination station"
+    label_key: label
+    ref_line: 0
+    colour_key: group
+    colour_map: "$regression"
+    intervals:   # thick clustered bar first, thin naive bar drawn on top of it
+      - { lo_key: cluster_lo, hi_key: cluster_hi, point_key: coef, label: "Two-way clustered 95% CI", thickness: 9 }
+      - { lo_key: naive_lo, hi_key: naive_hi, label: "Naive 95% CI", colour: "$ui.ink", thickness: 2 }
+    tip_keys:
+      - { key: coef, label: "Coefficient", dp: 3 }
+      - { key: irr, label: "Rate ratio (exp)", dp: 2, unit: "x" }
+      - { key: p_cluster, label: "p, clustered", dp: 3 }
+      - { key: p_naive, label: "p, naive", dp: 3 }
+
+  regression_ladder:
+    file: regression.json
+    scope: global
+    field: ladder
+    render: bar
+    orientation: horizontal
+    title: "Building the model"
+    subtitle: "Drop in AIC as each block of variables is added (larger = more explanatory power)"
+    label_key: added
+    value_key: aic_drop
+    colour: "$ui.accent"
+    tip_keys:
+      - { key: model, label: "Model" }
+      - { key: aic, label: "AIC", dp: 0 }
+      - { key: llf, label: "Log-likelihood", dp: 0 }
+
   segregated_kpi:
     file: segregated_summary.json
     scope: global
@@ -226,39 +590,64 @@ layers:
     value_key: trips
     colour: "$infra.segregated"
 
-# Views are the side-panel tabs. Each lists layers in display order (global
-# layers always render; station layers only once a station is selected) and
-# says what the map should overlay while the tab is active.
-#   map.stations: sized (radius by trips) | dots (uniform)
-#   map.timeline: none | dates (phase 2 slider) | hours (standard-day player)
+# Views are the side-panel tabs, in story order. Each lists layers in display
+# order (station layers only render once a station is selected; `show_if`
+# hides others) and says what the map should overlay while the tab is active.
+#   map.stations: sized (radius by trips) | dots (uniform) | "$state_key"
+#                 resolving to buffers (census choropleth) | bars (2.5D columns)
+#   map.select:   false disables station selection (no pointer, no picker)
+#   map.timeline: none | dates (date slider) | hours (standard-day player)
 #   map.infra:    none | all | timeline | segregated
 #   map.loads:    none | corridor (city-wide flow map when no station selected)
+#   map.heat:     none | premises (toggleable heat layer)
 #   legend:       ordered legend groups; every entry is a show/hide toggle
+#   controls:     control names rendered in the legend
 views:
   flows:
     title: "Station flows"
     phase: 1
-    layers: [od_split_kpi, od_top_destinations, od_top_origins, od_hourly_split]
-    map: { lines: [od_top_destinations, od_top_origins], infra: none, loads: none, timeline: hours, stations: sized }
+    layers: [flows_intro, system_kpi, system_hourly, system_shift,
+             od_split_kpi, od_top_destinations, od_top_origins, od_compare_dest, od_compare_orig, od_hourly_split]
+    map: { lines: [od_top_destinations, od_top_origins], infra: none, loads: none, heat: none, timeline: hours, stations: sized, select: true }
+    controls: [daytype]
     legend: [lines, stations]
+    prompt: "Click a station on the map, or pick one from the list, to see its top destinations and origins, how they differ between weekdays and weekends, and its hourly origin/destination split."
+    hint: "lines follow the shortest bike-network route; press play for a standard day"
+
+  neighbourhoods:
+    title: "Neighbourhoods"
+    phase: 2
+    layers: [nbhd_intro, census_kpi, census_top, census_bottom, balance_kpi, balance_top, balance_bottom, station_profile]
+    map: { lines: [], infra: none, loads: none, heat: premises, timeline: none, stations: "$nbhd_mode", select: true }
+    controls: [nbhd_mode, census_var, buffer]
+    legend: [scale, heat, stations]
+    prompt: "Click a station to see its full neighbourhood profile at the selected buffer."
+    hint: "buffer colour = value of the selected variable; toggle the licensed-premises heat map in the legend"
 
   timeline:
-    title: "Infrastructure timeline"
-    phase: 2
-    layers: [infra_state_kpi, infra_km_timeline]
-    map: { lines: [], infra: timeline, loads: none, timeline: dates, stations: dots }
+    title: "Cycle infrastructure"
+    phase: 3
+    layers: [infra_intro, infra_state_kpi, infra_km_timeline]
+    map: { lines: [], infra: timeline, loads: none, heat: none, timeline: dates, stations: dots, select: false }
+    controls: []
     legend: [infra, stations]
+    hint: "drag the slider or press play; stations appear at their first trip"
 
   corridors:
-    title: "Corridors & context"
-    phase: 3
-    layers: [corridor_network_kpi, commuter_kpi, corridor_top, corridor_exposure, station_exposure, station_profile]
-    map: { lines: [corridor_top], infra: none, loads: corridor, timeline: none, stations: dots }
-    legend: [corridor, stations]
-
-  segregated:
-    title: "Segregated infrastructure"
+    title: "Commuter corridors"
     phase: 4
-    layers: [segregated_kpi, segregated_top, station_exposure]
-    map: { lines: [], infra: segregated, loads: none, timeline: none, stations: dots }
-    legend: [segmode, stations]
+    layers: [corridors_intro, corridor_network_kpi, commuter_kpi, corridor_top, corridor_exposure, station_exposure]
+    map: { lines: [corridor_top], infra: none, loads: corridor, heat: none, timeline: none, stations: dots, select: true }
+    controls: []
+    legend: [corridor, stations]
+    prompt: "Click a station to see its busiest corridors, their commuter label and how much of each route runs on cycle infrastructure."
+    hint: "street width = trips whose shortest bike route used that street"
+
+  regression:
+    title: "Regression"
+    phase: 5
+    layers: [regression_intro, regression_headline, regression_irr, regression_forest, regression_ladder, segregated_kpi, segregated_top]
+    map: { lines: [], infra: segregated, loads: none, heat: none, timeline: none, stations: dots, select: false }
+    controls: [segmode]
+    legend: [stations]
+    hint: "click a segment for its trip counts; switch to commuter corridors in the legend"

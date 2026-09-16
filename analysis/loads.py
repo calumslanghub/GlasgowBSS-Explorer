@@ -10,7 +10,10 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Hashable
 
-CATEGORIES: tuple[str, ...] = ("commuter", "non-commuter", "unclassified")
+# Pairs the k-means step could not label (too few pre-COVID trips) count as
+# non-commuter, as in the dissertation's regression (``is_commuter`` filled 0).
+CATEGORIES: tuple[str, ...] = ("commuter", "non-commuter")
+DEFAULT_CATEGORY: str = "non-commuter"
 
 Pair = tuple[str, str]
 
@@ -18,12 +21,12 @@ Pair = tuple[str, str]
 def pair_category(
     origin: str, dest: str, lookup: dict[tuple[str, str], bool]
 ) -> str:
-    """Commuter label for a directed pair from the unordered-pair lookup."""
+    """Commuter label for a directed pair from the unordered-pair lookup.
+
+    Unlabelled pairs are ``"non-commuter"`` (see ``DEFAULT_CATEGORY``).
+    """
     key = (origin, dest) if origin <= dest else (dest, origin)
-    flag = lookup.get(key)
-    if flag is None:
-        return "unclassified"
-    return "commuter" if flag else "non-commuter"
+    return "commuter" if lookup.get(key) else DEFAULT_CATEGORY
 
 
 def accumulate_loads(
@@ -34,15 +37,15 @@ def accumulate_loads(
     """Sum trips over every edge each pair's route uses, split by category.
 
     Returns:
-        ``{edge: {"commuter": n, "non-commuter": n, "unclassified": n}}`` for
-        edges with at least one trip.
+        ``{edge: {"commuter": n, "non-commuter": n}}`` for edges with at least
+        one trip.
     """
     loads: dict[Hashable, dict[str, int]] = defaultdict(lambda: dict.fromkeys(CATEGORIES, 0))
     for pair, edges in pair_edges.items():
         trips = int(pair_trips.get(pair, 0))
         if trips <= 0:
             continue
-        cat = pair_cat.get(pair, "unclassified")
+        cat = pair_cat.get(pair, DEFAULT_CATEGORY)
         for e in set(edges):
             loads[e][cat] += trips
     return dict(loads)
@@ -82,7 +85,7 @@ def segment_usage(
                 per_seg[seg] += m
         total = 0.0
         trips = int(pair_trips.get(pair, 0))
-        cat = pair_cat.get(pair, "unclassified")
+        cat = pair_cat.get(pair, DEFAULT_CATEGORY)
         for seg, m in per_seg.items():
             if m >= min_overlap_m:
                 total += m
@@ -101,7 +104,7 @@ def usage_summary(
     """Trips and pairs whose route follows any segment, optionally per category."""
     trips_total = trips_on = pairs_total = pairs_on = 0
     for pair, trips in pair_trips.items():
-        if category is not None and pair_cat.get(pair, "unclassified") != category:
+        if category is not None and pair_cat.get(pair, DEFAULT_CATEGORY) != category:
             continue
         pairs_total += 1
         trips_total += int(trips)
@@ -123,7 +126,7 @@ def category_totals(
     """Pairs, trips and trip share per category across the whole network."""
     out = {c: {"pairs": 0, "trips": 0} for c in CATEGORIES}
     for pair, trips in pair_trips.items():
-        cat = pair_cat.get(pair, "unclassified")
+        cat = pair_cat.get(pair, DEFAULT_CATEGORY)
         out[cat]["pairs"] += 1
         out[cat]["trips"] += int(trips)
     total = sum(v["trips"] for v in out.values())

@@ -72,3 +72,25 @@ def test_od_summary_and_top_pairs(od: pd.DataFrame) -> None:
 def test_missing_columns_raise() -> None:
     with pytest.raises(ValueError):
         od_mod.top_n_destinations(pd.DataFrame({"x": [1]}), "A")
+
+
+def test_compare_daytypes_reports_union_sorted_by_shift(od: pd.DataFrame) -> None:
+    weekend = pd.DataFrame(
+        [("A", "B", 10), ("A", "C", 60), ("A", "H", 30)], columns=["origin", "destination", "trips"]
+    )
+    rows = od_mod.compare_daytypes(od, weekend, "A", "out", n=2)
+    # Top 2 weekday: B, C. Top 2 weekend: C, H. Union = B, C, H.
+    assert {r["station"] for r in rows} == {"B", "C", "H"}
+    by = {r["station"]: r for r in rows}
+    assert by["H"]["weekday_trips"] == 0 and by["H"]["weekend_share"] == 30.0
+    assert by["B"]["weekday_share"] == pytest.approx(50 / 107 * 100, abs=0.01)
+    assert rows[0]["diff"] >= rows[-1]["diff"]
+    assert rows[0]["station"] == "C"   # +60% - 28% is the largest weekend gain
+
+
+def test_station_share_shift(od: pd.DataFrame) -> None:
+    weekend = pd.DataFrame([("A", "B", 10), ("C", "B", 10)], columns=["origin", "destination", "trips"])
+    rows = od_mod.station_share_shift(od, weekend, n=1)
+    by = {r["station"]: r for r in rows}
+    assert "A" in by and "B" in by
+    assert by["B"]["weekend_share"] == 100.0   # B touches every weekend trip

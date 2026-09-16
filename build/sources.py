@@ -28,6 +28,8 @@ COMMUTER_CSV: Path = RAW_DIR / "commuter_labels.csv"
 STATION_VARS_CSV: Path = RAW_DIR / "station_independent_variables.csv"
 STATION_PREMISES_CSV: Path = RAW_DIR / "station_on_premises.csv"
 EPOCHS_CSV: Path = RAW_DIR / "glasgow_epochs.csv"
+# Glasgow licensing board premises points (BNG X/Y); on-sales only are used.
+PREMISES_POINTS_CSV: Path = RAW_DIR / "Glasgow_Alc_Premise.csv"
 
 # Large inputs read in place (never copied, never shipped to the browser).
 TRIPS_CSV: Path = Path(

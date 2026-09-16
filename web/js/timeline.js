@@ -23,7 +23,7 @@ var TL_MODES = {
     apply: function (v) { S.hour = v; },
     initial: function () { return 0; },
     interval: 700,
-    hint: 'Press play to watch a standard day. Marker size = trips to or from the station in that hour; colour: <span class="hint-scale"></span> mostly ending here (red) to mostly starting here (blue).',
+    hint: 'Press play to watch a standard day (all days, weekdays or weekends: use the Days switch in the legend). Marker size = trips per day to or from the station in that hour; colour: <span class="hint-scale"></span> mostly ending here (red) to mostly starting here (blue).',
     resettable: true
   }
 };

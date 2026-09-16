@@ -19,17 +19,18 @@ def cats() -> dict:
     return {p: loads.pair_category(p[0], p[1], LOOKUP) for p in PAIR_EDGES}
 
 
-def test_pair_category_is_unordered() -> None:
+def test_pair_category_is_unordered_and_unlabelled_is_non_commuter() -> None:
     assert loads.pair_category("B", "A", LOOKUP) == "commuter"
     assert loads.pair_category("A", "C", LOOKUP) == "non-commuter"
-    assert loads.pair_category("A", "Z", LOOKUP) == "unclassified"
+    assert loads.pair_category("A", "Z", LOOKUP) == "non-commuter"
+    assert loads.CATEGORIES == ("commuter", "non-commuter")
 
 
 def test_accumulate_loads_sums_both_directions_by_category() -> None:
     ld = loads.accumulate_loads(PAIR_EDGES, PAIR_TRIPS, cats())
-    assert ld["e2"] == {"commuter": 150, "non-commuter": 0, "unclassified": 0}
-    assert ld["e1"] == {"commuter": 150, "non-commuter": 20, "unclassified": 0}
-    assert ld["e4"] == {"commuter": 0, "non-commuter": 20, "unclassified": 7}
+    assert ld["e2"] == {"commuter": 150, "non-commuter": 0}
+    assert ld["e1"] == {"commuter": 150, "non-commuter": 20}
+    assert ld["e4"] == {"commuter": 0, "non-commuter": 27}   # A->C (20) + unlabelled A->D (7)
     assert "e9" not in ld
 
 
@@ -54,5 +55,6 @@ def test_usage_summary_and_category_totals() -> None:
     s_c = loads.usage_summary(PAIR_TRIPS, cats(), po, category="commuter")
     assert s_c == {"trips_total": 150, "trips_on": 150, "share_pct": 100.0, "pairs_total": 2, "pairs_on": 2}
     tot = loads.category_totals(PAIR_TRIPS, cats())
-    assert tot["commuter"]["trips"] == 150 and tot["unclassified"]["pairs"] == 1
+    assert tot["commuter"]["trips"] == 150 and tot["non-commuter"]["pairs"] == 2
+    assert set(tot) == {"commuter", "non-commuter"}
     assert sum(v["pct"] for v in tot.values()) == pytest.approx(100, abs=0.2)

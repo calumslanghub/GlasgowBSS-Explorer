@@ -113,47 +113,6 @@ The " - ELECTRIC" suffix on some names is part of the id — do not strip it.
 
 If a view ever needs something only the raw trips can provide (e.g. the hourly 6am–midnight origin/destination split for the stacked bar), **aggregate it in `build/` and write the small result to JSON.** The browser must never see a trip file.
 
-## Phase plan
-
-### Phase 1 (build this now): map + OD explorer + origin/destination split
-
-Deliver a single-page dashboard with:
-
-1. **Leaflet map** of the 122 stations. Click a station to select it.
-2. For the selected station:
-   - **Top 10 destinations** (where trips from this station go).
-   - **Top 10 origins** (where trips ending here started).
-   - This should include a side panel that displays the top 10 as a bar chart.
-   - On the map clicking a station should reveal lines that show the trip, through the OSMnx.  
-   - Reuse **one** horizontal-bar renderer for both.
-3. **Origin vs destination stacked bar** for the selected station: of all trips related to this station, what % originate here vs terminate here. One bar, two colours, filled to 100%. Should be a timeseries graph between 6am-11pm. Colour scheme- Blue = Origin, Red = Desination.
-
-
-For phase 1, `glasgowOD.csv` (directed `origin, destination, trips`) is enough for
-all three — top destinations = filter `origin == station`, top origins = filter
-`destination == station`, and the origin/destination split = sum of outbound vs
-inbound trips. **The hourly 6am–midnight version of the split needs the trip
-files, so build that aggregation in `build/od.py` only if/when we want the
-time-of-day breakdown; otherwise the all-day split is fine for v1.**
-
-Build order: `analysis/od.py` (pure functions + tests) → `build/od.py` (writes
-`od_by_station.json`) → `web/js/renderers.js` + `map.js` → wire in `app.js`.
-
-### Phase 2 (do NOT start until phase 1 is deployed): Infrastructure Timeline
-A date slider that plays cycle infrastructure appearing over 2017–2024. This panel will include the cycle infrastructure and BSS stations. Not all stations were open when data was first collected. During slider stations should only appear on the date of the first trip that has the station as an origin or destination. 
-
-- The GCC shapefile `CyclingRoutes/Cycling_Routes_Open.shp` has **no opening-date
-  field.** Confirmed columns: `OBJECTID, HYPERLINK, LOC_AUTHOR, CATEGORY_1..5,
-  EXTRA_INFO, ROUTENAMEO, TYPE_NEW, PUB_CLASS, SHAPELEN`. It is in **BNG
-  (EPSG:27700)** — reproject to WGS84 for the map.
-- Opening dates come entirely from **three hand-coded dicts** in
-  `GlasgowExposureFinal.ipynb`: `SCHEMES_OPENED`, `PHASED_SCHEMES`,
-  `SEGMENT_OPENED`, applied by a `derive_opened(row)` function. `PUB_CLASS` maps to infra type via `GCC_TYPE_MAP`. **Most of `SCHEMES_OPENED` is commented out**, so most segments default to `STUDY_START` (2017-09-15) and will appear at date zero. The scale slider will start at 2017-09-15, the undated infrastructure was there at 2017-09-15. 
-
-- Phase 2 = port `GCC_TYPE_MAP`, `EXTRA_INFO_NORMALISE`, and `derive_opened()` into `build/infra.py`, ideally **completing the opening dates**, then write a simplified GeoJSON with per-segment `opened` + `infra_type` to `web/data/`. The slider filters `opened <= selectedDate` client-side. `glasgow_epochs.csv` is the derived output of this process, useful for snapping the slider to real dates.
-
-Do not scope-creep phase 2 features into phase 1.
-
 ## Coding conventions
 
 **Python (build + analysis):**
@@ -267,41 +226,55 @@ Frontend libraries (Leaflet, Chart.js) load via CDN — not pip.
   not "Added...".
 - Tag milestones: `v0.1-map-od`, `v0.2-origin-dest-split`, `v1.0-phase1-live`.
 - The `main` branch is what GitHub Pages deploys — keep it working.
-### Phase 3 (built after phase 2): Corridors & context
+### The five pages (story order, Sep 2026 revision)
 
-Surfaces the remaining dissertation aggregates for the selected station, on a
-third tab, with **no new renderers** (reuses `bar` and `kpi`):
+The tabs follow the dissertation's argument. Each is a `views` entry in
+`config/layers.yaml`; the numbers below are the `phase` badge shown in the tab.
 
-- **Busiest corridors** (both directions combined) coloured by the k-means
-  commuter label from `commuter_labels.csv` (commuter / leisure / unclassified);
-  the same rows drive the map lines while this tab is active.
-- **Route on cycle infrastructure**: per corridor, the trip-weighted `exp_any`
-  from `glasgow_od_panel_collapsed.csv` (mean across regime blocks), plus a
-  station-level breakdown by infrastructure type.
-- **Neighbourhood profile**: 250 m buffer covariates from
-  `station_independent_variables.csv` and `station_on_premises.csv`.
+1. **Station flows** — all-days / weekday / weekend top lists, hourly split
+   and a weekday-vs-weekend dumbbell per station; network-wide profiles and
+   the station-share shift when nothing is selected. Day type is a `daytype`
+   control; the standard-day player sizes markers by trips *per day* so the
+   day types compare. Build: `build/od.py` streams the trip file once
+   (`TripAggregates`) and writes `od_by_station.json` (nested
+   `all|weekday|weekend` blocks + `compare`) and `system_profile.json`.
+2. **Neighbourhoods** — census-buffer choropleth (`census_var` + `buffer`
+   controls, colour range 5th–95th percentile), a licensed-premises heat
+   layer (Leaflet.heat, `premises.json` from the licensing-board points) and
+   2.5D residents-vs-workplace columns (`nbhd_mode: bars`, CSS `divIcon`s).
+   Build: `build/context.write_census` (`census_by_station.json`,
+   `census_summary.json`), `build/premises.py`.
+3. **Cycle infrastructure** — the date slider, unchanged; `map.select: false`.
+4. **Commuter corridors** — flow map + per-station corridors. Unlabelled
+   pairs are **merged into non-commuter** (matches the regression's
+   `is_commuter.fillna(0)`); the neighbourhood profile moved to page 2.
+5. **Regression** — `analysis/regression.py` holds the fitted coefficients
+   (ported from `RegressionRun.ipynb`, like the infra dates); `build/
+   regression.py` writes `regression.json` (forest rows, IRR curve, model
+   ladder). The map is the segregated-usage layer with the `segmode` control.
 
-Build: `analysis/context.py` (pure) → `build/context.py` writes
-`context_by_station.json`; manifest entries in `config/layers.yaml` under the
-`corridors` view.
+Routing (`build/routes.py`, `RouteSet`), segment usage (`analysis/loads.py`,
+`build/segregated.py`) and the corridor flow map are unchanged.
 
-### Phase 4: Segregated infrastructure usage
+### Frontend conventions
 
-A fourth tab showing only segregated segments, each drawn with width = trips
-whose bike-network route followed it (within the dissertation's 15 m snap
-tolerance for at least 30 m), with a legend switch to commuter-corridor trips
-only. Build: `build/routes.py` routes **all** directed OD pairs once
-(`RouteSet`), `analysis/loads.py` (pure) accumulates per-edge loads and
-per-segment usage, `build/segregated.py` writes `segregated.geojson` and
-`segregated_summary.json`. The same routing feeds the phase 3 city-wide flow
-map (`corridor_load.geojson`).
-
-### Frontend conventions added after first review
-
-- Corridor labels are **commuter / non-commuter / unclassified**. Never
-  "leisure": the dissertation does not classify leisure use.
-- The map legend is the single place for show/hide toggles; every legend
-  entry is a button. Views declare legend groups in `layers.yaml`.
+- Corridor labels are **commuter / non-commuter**. Never "leisure" (the
+  dissertation does not classify leisure use) and no longer "unclassified".
+- The map legend is the single place for toggles *and* controls. A control
+  is a `controls:` entry (state key, radio|select widget, options or
+  `options_from` a metadata object, `hash` key); views list the controls
+  they use. `setControl()` in app.js is the only state transition for them.
+- Generic renderers only: `bar` (also intervals/dumbbells via
+  `intervals`/`dumbbell`, `ref_line`, `tip_keys`, `head`/`tail`), `line`
+  (`x_type: number`, `ref_line`), `kpi` (`items_from`), `text` (narrative
+  with `{placeholders}`). Titles accept `{daytype}`-style placeholders.
+- Layer visibility: `show_if: {station: false, nbhd_mode: buffers}`; data
+  lookup: `path: [rank, $census_var, $buffer, top]` or
+  `field_from_state` + dotted `field`.
+- `map.stations` may be a `"$state_key"` reference (neighbourhood modes).
+  `map.select: false` hides the picker, ignores marker clicks and clears any
+  selection on entering the view: a station is selectable only where
+  selecting it does something.
 - Stations are uniform dots except in Station flows (size = trips). The
-  slider bar is generic: `dates` (phase 2) or `hours` (phase 1 standard day).
+  slider bar is generic: `dates` or `hours`.
 - Clicking empty map deselects the station; global-scope layers still render.

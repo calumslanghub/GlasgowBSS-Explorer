@@ -120,3 +120,107 @@ def top_pairs(summary: dict[str, dict]) -> set[tuple[str, str]]:
         for row in entry.get("top_orig", []):
             pairs.add((row["station"], station))
     return pairs
+
+
+def partner_shares(od: pd.DataFrame, station: str, direction: str) -> pd.DataFrame:
+    """Trips and share (%) per partner of ``station`` in one direction.
+
+    Args:
+        od: Directed OD matrix.
+        station: The selected station.
+        direction: ``"out"`` (partners are destinations) or ``"in"`` (origins).
+
+    Returns:
+        DataFrame indexed by partner with ``trips`` and ``share`` columns.
+    """
+    _check_od(od)
+    if direction == "out":
+        sub = od[(od["origin"] == station) & (od["destination"] != station)]
+        col = "destination"
+    else:
+        sub = od[(od["destination"] == station) & (od["origin"] != station)]
+        col = "origin"
+    g = sub.groupby(col)["trips"].sum().astype(int).to_frame("trips")
+    total = int(g["trips"].sum())
+    g["share"] = (g["trips"] / total * 100).round(2) if total else 0.0
+    g.index.name = "station"
+    return g
+
+
+def compare_daytypes(
+    od_a: pd.DataFrame,
+    od_b: pd.DataFrame,
+    station: str,
+    direction: str,
+    names: tuple[str, str] = ("weekday", "weekend"),
+    n: int = 10,
+) -> list[dict]:
+    """Dumbbell rows comparing a station's partners under two OD matrices.
+
+    Takes the union of the top ``n`` partners in each matrix and reports, for
+    every partner, its trips and share of the station's trips under both, so a
+    chart can show how the ranking shifts (e.g. weekday vs weekend).
+
+    Returns:
+        Rows ``{station, <a>_trips, <b>_trips, <a>_share, <b>_share, diff}``
+        sorted by ``diff`` (``<b>_share - <a>_share``, percentage points)
+        descending, where ``<a>``/``<b>`` are the two ``names``.
+    """
+    a_name, b_name = names
+    a = partner_shares(od_a, station, direction)
+    b = partner_shares(od_b, station, direction)
+    top = set(a.sort_values("trips", ascending=False).head(n).index)
+    top |= set(b.sort_values("trips", ascending=False).head(n).index)
+    rows = []
+    for partner in top:
+        ta = int(a["trips"].get(partner, 0))
+        tb = int(b["trips"].get(partner, 0))
+        sa = float(a["share"].get(partner, 0.0))
+        sb = float(b["share"].get(partner, 0.0))
+        rows.append({
+            "station": partner,
+            f"{a_name}_trips": ta,
+            f"{b_name}_trips": tb,
+            f"{a_name}_share": round(sa, 2),
+            f"{b_name}_share": round(sb, 2),
+            "diff": round(sb - sa, 2),
+        })
+    rows.sort(key=lambda r: (-r["diff"], r["station"]))
+    return rows
+
+
+def station_share_shift(
+    od_a: pd.DataFrame,
+    od_b: pd.DataFrame,
+    names: tuple[str, str] = ("weekday", "weekend"),
+    n: int = 10,
+) -> list[dict]:
+    """Which stations gain or lose importance between two OD matrices.
+
+    A station's share is the percentage of that matrix's trips that start or
+    end there. The union of the top ``n`` stations by trips in each matrix is
+    reported.
+
+    Returns:
+        Rows ``{station, <a>_trips, <b>_trips, <a>_share, <b>_share, diff}``
+        sorted by ``diff`` (``<b>_share - <a>_share``) descending.
+    """
+    a_name, b_name = names
+    ta = station_totals(od_a).set_index("station")
+    tb = station_totals(od_b).set_index("station")
+    tot_a = float(od_a["trips"].sum()) or 1.0
+    tot_b = float(od_b["trips"].sum()) or 1.0
+    top = set(ta.sort_values("trips", ascending=False).head(n).index)
+    top |= set(tb.sort_values("trips", ascending=False).head(n).index)
+    rows = []
+    for s in top:
+        na = int(ta["trips"].get(s, 0))
+        nb = int(tb["trips"].get(s, 0))
+        sa = round(na / tot_a * 100, 2)
+        sb = round(nb / tot_b * 100, 2)
+        rows.append({
+            "station": s, f"{a_name}_trips": na, f"{b_name}_trips": nb,
+            f"{a_name}_share": sa, f"{b_name}_share": sb, "diff": round(sb - sa, 2),
+        })
+    rows.sort(key=lambda r: (-r["diff"], r["station"]))
+    return rows
