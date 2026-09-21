@@ -5,6 +5,8 @@ I BUILT THIS AFTER HANDING IN MY DISSERTATION
 The code is for an interactive, static dashboard of trip data from Glasgow's nextbike bike-share system (Sep 2017
 to Apr 2024) and its relationship to cycle infrastructure. I built the dashboard to provide an accessible format to view the findings of my dissertation. 
 
+Link to dashboard: https://calumslanghub.github.io/GlasgowBSS-Explorer/
+
 ## What it shows
 
 The five pages follow the dissertation: Data exploration of how the nextbike system is used,
