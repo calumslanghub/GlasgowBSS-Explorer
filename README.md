@@ -1,5 +1,7 @@
 # Glasgow Bike-Share Explorer
 
+I BUILT THIS AFTER HANDING IN MY DISSERTATION
+
 Interactive, static dashboard of Glasgow's nextbike bike-share system (Sep 2017
 to Apr 2024) and its relationship to cycle infrastructure. Built from the
 aggregated outputs of an MSc dissertation; no raw trip data is shipped.
