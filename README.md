@@ -2,17 +2,14 @@
 
 I BUILT THIS AFTER HANDING IN MY DISSERTATION
 
-Interactive, static dashboard of Glasgow's nextbike bike-share system (Sep 2017
-to Apr 2024) and its relationship to cycle infrastructure. Built from the
-aggregated outputs of an MSc dissertation; no raw trip data is shipped.
-
-**Live site:** _add the GitHub Pages / Netlify URL here once deployed_
+The code is for an interactive, static dashboard of trip data from Glasgow's nextbike bike-share system (Sep 2017
+to Apr 2024) and its relationship to cycle infrastructure. I built the dashboard to provide an accessible format to view the findings of my dissertation. 
 
 ## What it shows
 
-The five pages follow the dissertation's argument: how the system is used,
-who lives and works around the stations, what infrastructure arrived when,
-which station pairs are commuter corridors, and what the regression found.
+The five pages follow the dissertation: Data exploration of how the nextbike system is used,
+creation of variables based on surrounding area of each station, when infrastructure was built,
+what station pairs were identified commuter corridors, and the findings of the regression model.
 
 | Page | Content |
 |---|---|
@@ -62,53 +59,3 @@ geopandas, shapely, pyproj, pyyaml, osmnx, pytest).
    ```
    pytest tests/ -v
    ```
-
-## Running the site locally
-
-The site is plain files. Because the JS `fetch()`es JSON, open it through any
-static server rather than `file://`:
-
-```
-cd web && python -m http.server 8000
-```
-
-then visit http://localhost:8000.
-
-## Deploying
-
-`web/data/*.json` are committed (they are the site's database), so the `web/`
-folder is a complete static site. It deploys to GitHub Pages via
-`.github/workflows/deploy.yml`, which publishes the `web/` folder on every push
-to `main`. In the repo's **Settings -> Pages**, set **Source: GitHub Actions**
-(the workflow does the rest). Note the native "deploy from a branch" option
-cannot target a `web/` subfolder -- only the repo root or `/docs` -- which is why
-the Actions workflow is used.
-
-Once deployed the site lives at `https://<user>.github.io/<repo>/`; add that URL
-to the **Live site** line near the top of this README. Netlify or Cloudflare
-Pages also work -- set the publish directory to `web/` with no build command.
-
-## Data notes
-
-- Station names (including the ` - ELECTRIC` suffix) are the join key across
-  every table.
-- The infrastructure shapefile has no opening-date field. Dates come from
-  hand-coded lookups in `analysis/infra.py` ported from the dissertation
-  notebook; segments without a date default to the study start and the build
-  logs the named schemes still undated.
-- Commuter labels are the dissertation's pre-COVID k-means classification of
-  unordered station pairs; pairs with too few trips to classify are counted as
-  non-commuter, matching the regression (`is_commuter` filled with 0).
-- Weekday/weekend splits and hourly profiles come from streaming the trip
-  file once; the all-days top lists come from the dissertation's OD matrix,
-  which differs from the trip file by a few dozen trips.
-- The regression coefficients are ported as constants into
-  `analysis/regression.py` from `RegressionRun.ipynb` (re-estimating needs the
-  trip file and statsmodels); the build turns them into chart rows.
-- Licensed-premises points come from the Glasgow licensing board extract used
-  in the dissertation (`data/raw/Glasgow_Alc_Premise.csv`, on-sales only).
-- Route exposure is the share of a pair's shortest bike route within 15 m of
-  infrastructure, trip-weighted across the dissertation's exposure regimes.
-- The corridor flow map and segregated-usage counts route all 11,052 directed
-  OD pairs on the cached OSMnx bike graph (about a minute on 8 cores) and use
-  the latest infrastructure network, not the dated regimes.
