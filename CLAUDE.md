@@ -238,11 +238,16 @@ The tabs follow the dissertation's argument. Each is a `views` entry in
    day types compare. Build: `build/od.py` streams the trip file once
    (`TripAggregates`) and writes `od_by_station.json` (nested
    `all|weekday|weekend` blocks + `compare`) and `system_profile.json`.
-2. **Neighbourhoods** — census-buffer choropleth (`census_var` + `buffer`
-   controls, colour range 5th–95th percentile), a licensed-premises heat
-   layer (Leaflet.heat, `premises.json` from the licensing-board points) and
-   2.5D residents-vs-workplace columns (`nbhd_mode: bars`, CSS `divIcon`s).
-   Build: `build/context.write_census` (`census_by_station.json`,
+2. **Neighbourhoods** — output-area choropleth (`oa.geojson`, the output areas
+   within 500 m of a station; `census_var` + `buffer` controls, colour range
+   5th–95th percentile **across output areas**). Selecting a station adds its
+   buffer circle on that same scale — the average is what the regression uses.
+   Plus a licensed-premises heat layer (Leaflet.heat, `premises.json` from the
+   licensing-board points), 2.5D residents-vs-workplace columns
+   (`nbhd_mode: bars`, CSS `divIcon`s) and the workplace-uplift panels.
+   Buffers are 150/250/500 m. Build: `build/census_oa.py` (+
+   `analysis/census_oa.py`, ported from `CensusFix_2.ipynb`),
+   `build/context.write_census` (`census_by_station.json`,
    `census_summary.json`), `build/premises.py`.
 3. **Cycle infrastructure** — the date slider, unchanged; `map.select: false`.
 4. **Commuter corridors** — flow map + per-station corridors. Unlabelled

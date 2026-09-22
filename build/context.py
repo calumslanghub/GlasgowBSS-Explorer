@@ -19,6 +19,7 @@ log = logging.getLogger(__name__)
 TOP_N: int = 10
 BUFFER_M: int = 250
 RANK_N: int = 10
+MOVERS_N: int = 12
 
 
 def load_inputs() -> tuple[pd.DataFrame, dict, pd.DataFrame, pd.DataFrame]:
@@ -83,6 +84,7 @@ def write_context(
 
 def write_census(
     stations: list[str],
+    oa: dict | None = None,
     out_station: Path = sources.WEB_DATA_DIR / "census_by_station.json",
     out_summary: Path = sources.WEB_DATA_DIR / "census_summary.json",
 ) -> tuple[dict, dict]:
@@ -90,7 +92,14 @@ def write_census(
 
     ``census_by_station.json`` is ``{station: {buffer_m: {var: value}}}``;
     ``census_summary.json`` carries variable metadata, per-variable rankings
-    and scale statistics for every buffer, and the residents-vs-workplace rows.
+    and scale statistics for every buffer, the residents-vs-workplace rows and
+    the workplace-uplift panels.
+
+    Args:
+        stations: Station names to describe.
+        oa: ``write_oa`` result (``{n, reach_m, scale}``); its ``scale`` becomes
+            the colour domain shared by the output-area polygons and the station
+            buffers. Omitted when no output-area layer was built.
     """
     station_vars = pd.read_csv(sources.STATION_VARS_CSV)
     premises = pd.read_csv(sources.STATION_PREMISES_CSV)
@@ -114,6 +123,7 @@ def write_census(
         for b, rows in balance.items()
     }
     by_station = {s: {str(b): v for b, v in buf.items()} for s, buf in table.items()}
+    lo_buffer, hi_buffer = min(ctx.BUFFERS_M), max(ctx.BUFFERS_M)
     summary = {
         "vars": vars_meta,
         "buffers": list(ctx.BUFFERS_M),
@@ -121,7 +131,16 @@ def write_census(
         "rank": rank,
         "balance": balance,
         "balance_kpi": balance_kpi,
+        "uplift": {
+            "by_buffer": ctx.buffer_uplift(table),
+            "movers": ctx.uplift_movers(table, lo_buffer, hi_buffer, MOVERS_N),
+            "lo_buffer": lo_buffer,
+            "hi_buffer": hi_buffer,
+        },
     }
+    if oa:
+        summary["oa_scale"] = oa["scale"]
+        summary["oa"] = {"n": oa["n"], "reach_m": oa["reach_m"]}
     out_station.write_text(json.dumps(by_station, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     out_summary.write_text(json.dumps(summary, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     log.info("Wrote census covariates for %d stations x %d buffers", len(by_station), len(ctx.BUFFERS_M))

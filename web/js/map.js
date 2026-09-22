@@ -1,6 +1,7 @@
-// map.js — Leaflet map: station markers (sized dots, census buffers or 2.5D
-// population columns), OD route lines, corridor flow map, infrastructure
-// layers, the licensed-premises heat layer and the legend (toggles + controls).
+// map.js — Leaflet map: station markers (sized dots, the census output-area
+// choropleth or 2.5D population columns), OD route lines, corridor flow map,
+// infrastructure layers, the premises heat layer and the legend (toggles +
+// controls).
 // Reads global state S (app.js) and DATA (data.js); exposes a small MAP api.
 // Everything the map draws is decided by the active view's `map`, `legend`
 // and `controls` config in the manifest, so a new overlay is a config entry.
@@ -13,9 +14,10 @@ var MAP = {
   lineLayer: null,    // selected station's route polylines
   loadLayer: null,    // city-wide corridor flow map
   infraLayer: null,   // cycle infrastructure (all / timeline / segregated)
-  bufferLayer: null,  // census buffer circles
+  bufferLayer: null,  // the selected station's census buffer circle
   barLayer: null,     // residents vs workplace columns
   heatLayer: null,    // licensed premises heat map
+  oaLayer: null,      // census output-area choropleth (built once, restyled)
   infraFeatures: [],  // cached leaflet layers from infra.geojson
   segFeatures: []     // cached leaflet layers from segregated.geojson
 };
@@ -27,11 +29,15 @@ var BAR_MAX_PX = 64;
 function initMap() {
   MAP.map = L.map('map', { zoomControl: false, preferCanvas: true }).setView([55.86, -4.26], 12);
   L.control.zoom({ position: 'topright' }).addTo(MAP.map);
+  L.control.scale({ position: 'bottomleft', imperial: false, maxWidth: 120 }).addTo(MAP.map);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · Infra: Glasgow City Council · Trips: nextbike Glasgow · Census 2022: NRS · Premises: Glasgow Licensing Board',
     maxZoom: 19, opacity: 0.6
   }).addTo(MAP.map);
-  // Heat canvas sits in its own pane under every vector layer.
+  // Census output areas sit at the bottom, then the heat canvas, then every
+  // vector layer (overlayPane, 400).
+  MAP.map.createPane('oa');
+  MAP.map.getPane('oa').style.zIndex = 340;
   MAP.map.createPane('heat');
   MAP.map.getPane('heat').style.zIndex = 350;
   MAP.infraLayer = L.layerGroup().addTo(MAP.map);
@@ -40,6 +46,7 @@ function initMap() {
   MAP.lineLayer = L.layerGroup().addTo(MAP.map);
   MAP.barLayer = L.layerGroup().addTo(MAP.map);
   buildStationMarkers();
+  buildOALayer();
   buildInfraLayer();
   buildSegregatedLayer();
   // Clicking empty map deselects; feature clicks stop propagation.
@@ -73,6 +80,11 @@ function buildStationMarkers() {
     m.addTo(MAP.map);
     MAP.markers[s.id] = m;
   });
+  fitStations();
+}
+
+// Frame the whole network (initial view, and any control asking for `fit: all`).
+function fitStations() {
   var b = L.latLngBounds(stations().map(function (s) { return [s.lat, s.lon]; }));
   if (b.isValid()) MAP.map.fitBounds(b.pad(0.05));
 }
@@ -85,7 +97,7 @@ function stationTip(s) {
     html += fmtNum(h.out) + ' starting · ' + fmtNum(h.in) + ' ending at ' + S.hour + ':00 (' + controlLabel('daytype', S).toLowerCase() + ')';
   } else if (mode === 'buffers') {
     var v = censusValue(s.id), meta = censusVarMeta();
-    html += meta.label + ': ' + (v === null ? 'n/a' : fmtNum(v, meta.dp, meta.unit)) + ' · ' + S.buffer + ' m buffer';
+    html += meta.label + ': ' + (v === null ? 'n/a' : fmtNum(v, meta.dp, meta.unit)) + ' · ' + S.buffer + ' m buffer average';
   } else if (mode === 'bars') {
     var c = censusRow(s.id) || {};
     html += fmtNum(c.over16pop) + ' residents 16+ · ' + fmtNum(c.workplace_pop) + ' workplace · ' + S.buffer + ' m';
@@ -131,36 +143,75 @@ function styleMarkers() {
   document.getElementById('map').classList.toggle('no-select', !canSelect());
 }
 
-// ── Census buffers and population columns ─────────────────────────────────────
+// ── Census output areas, buffers and population columns ───────────────────────
+var NO_VALUE_COLOUR = '#d9d9d9';
+
 function rampColor(t) {
   var sc = DATA.manifest.colours.scale;
   t = Math.max(0, Math.min(1, t));
   return t < 0.5 ? lerpColor(sc.low, sc.mid, t * 2) : lerpColor(sc.mid, sc.high, (t - 0.5) * 2);
 }
 
+// Built once from oa.geojson (thousands of polygons) and restyled in place when
+// the variable changes; rebuilding it per control change would stall the map.
+// Polygons take no click handler, so a click passes through to the map's own
+// handler and deselects, like clicking anywhere else off a station.
+function buildOALayer() {
+  var fc = DATA.files['oa.geojson'];
+  if (!fc || !fc.features.length) return;
+  MAP.oaLayer = L.geoJSON(fc, {
+    pane: 'oa',
+    renderer: L.canvas({ pane: 'oa' }),
+    interactive: true,
+    style: function () { return { weight: 0.4, color: '#ffffff', fillOpacity: 0.75 }; }
+  });
+  MAP.oaLayer.bindTooltip(function (layer) {
+    var meta = censusVarMeta(), v = layer.feature.properties[S.census_var];
+    return '<b>' + meta.label + ': ' + (v === null || v === undefined ? 'n/a' : fmtNum(v, meta.dp, meta.unit)) +
+      '</b><span style="color:#5e5e5e">output area ' + layer.feature.properties.code + '</span>';
+  }, { sticky: true, className: 'oa-tip' });
+}
+
+function drawOA() {
+  if (!MAP.oaLayer) return;
+  var show = stationMode() === 'buffers' && S.show.oa;
+  if (!show) { MAP.map.removeLayer(MAP.oaLayer); return; }
+  MAP.oaLayer.setStyle(function (f) {
+    var t = censusRamp(f.properties[S.census_var]);
+    return { fillColor: t === null ? NO_VALUE_COLOUR : rampColor(t) };
+  });
+  if (!MAP.map.hasLayer(MAP.oaLayer)) MAP.oaLayer.addTo(MAP.map);
+}
+
 function drawOverlays() {
   MAP.bufferLayer.clearLayers();
   MAP.barLayer.clearLayers();
   var mode = stationMode();
+  drawOA();
   if (mode === 'buffers') drawBuffers();
   else if (mode === 'bars') drawBars();
 }
 
+// Over the output areas only the selected station gets a buffer: it shows how
+// big the buffer is against the areas beneath it, filled with the average the
+// station profile (and the regression) actually uses, on the same colour scale.
+// Without an output-area layer every station keeps its disc, so the map still
+// carries the variable.
 function drawBuffers() {
-  var sc = censusScale();
-  if (!sc) return;
   var meta = censusVarMeta();
   var ink = DATA.manifest.colours.ui.ink;
   stations().forEach(function (s) {
-    if (!S.show.stations && s.id !== S.station) return;
-    var v = censusValue(s.id);
-    var t = v === null ? null : (sc.hi > sc.lo ? (v - sc.lo) / (sc.hi - sc.lo) : 0.5);
     var selected = s.id === S.station;
+    if (MAP.oaLayer ? !selected : (!S.show.stations && !selected)) return;
+    var v = censusValue(s.id);
+    var t = censusRamp(v);
     var circ = L.circle([s.lat, s.lon], {
       radius: +S.buffer, color: selected ? ink : '#fff', weight: selected ? 2.5 : 0.8,
-      fillColor: t === null ? '#d9d9d9' : rampColor(t), fillOpacity: selected ? 0.8 : 0.55
+      fillColor: t === null ? NO_VALUE_COLOUR : rampColor(t),
+      fillOpacity: selected && !MAP.oaLayer ? 0.8 : 0.55
     });
-    circ.bindTooltip('<b>' + s.id + '</b><br>' + meta.label + ': ' + (v === null ? 'n/a' : fmtNum(v, meta.dp, meta.unit)) + '<br><span style="color:#5e5e5e">' + S.buffer + ' m buffer</span>', { sticky: true });
+    circ.bindTooltip('<b>' + s.id + '</b><br>' + meta.label + ': ' + (v === null ? 'n/a' : fmtNum(v, meta.dp, meta.unit)) +
+      '<br><span style="color:#5e5e5e">average over the ' + S.buffer + ' m buffer</span>', { sticky: true });
     circ.on('click', clickSelect(s.id));
     circ.addTo(MAP.bufferLayer);
   });
@@ -421,12 +472,23 @@ function drawLegend() {
         g.appendChild(el('span', 'lg-note', fmtNum(sc.lo, meta.dp, meta.unit)));
         g.appendChild(ramp);
         g.appendChild(el('span', 'lg-note', fmtNum(sc.hi, meta.dp, meta.unit)));
-        if (meta.desc) g.appendChild(el('span', 'lg-note lg-wide', meta.desc + '. Colour range = 5th to 95th percentile.'));
+        var note = meta.desc ? meta.desc + '. ' : '';
+        note += 'Colour range = 5th to 95th percentile' + (MAP.oaLayer ? ' across output areas' : '') + '.';
+        if (S.station) note += ' The ring is the ' + S.buffer + ' m buffer, filled with its average.';
+        g.appendChild(el('span', 'lg-note lg-wide', note));
       } else if (stationMode() === 'bars') {
         g.appendChild(el('span', 'lg-title', 'Columns'));
         g.appendChild(el('span', 'lg', '<i class="col" style="background:' + cols.balance.residents + '"></i>residents 16+'));
         g.appendChild(el('span', 'lg', '<i class="col" style="background:' + cols.balance.workplace + '"></i>workplace population'));
         g.appendChild(el('span', 'lg-note', 'height = people in the buffer (square-root scale)'));
+      }
+    } else if (group === 'oa') {
+      if (MAP.oaLayer && stationMode() === 'buffers') {
+        var oa = (DATA.files['census_summary.json'] || {}).oa || {};
+        g.appendChild(el('span', 'lg-title', 'Census'));
+        g.appendChild(legendItem('<i style="background:linear-gradient(90deg,' + cols.scale.low + ',' + cols.scale.high + ')"></i>' +
+          (oa.n ? fmtNum(oa.n) + ' output areas' : 'output areas'), S.show.oa,
+          function () { S.show.oa = !S.show.oa; drawOA(); drawLegend(); }));
       }
     } else if (group === 'heat') {
       if (view.map.heat === 'premises') {
@@ -443,13 +505,16 @@ function drawLegend() {
   });
 }
 
-// Zoom to the selected station and its drawn routes (falls back to the marker).
+// Zoom to the selected station and whatever was drawn for it — its routes, or
+// its census buffer, so the buffer's size on the ground is readable (falls back
+// to the marker).
 function focusStation(id) {
   var m = MAP.markers[id];
   if (!m) return;
   var b = L.latLngBounds([m.getLatLng()]);
   MAP.lineLayer.eachLayer(function (l) { b.extend(l.getBounds()); });
-  MAP.map.fitBounds(b.pad(0.15), { maxZoom: 14, animate: true });
+  MAP.bufferLayer.eachLayer(function (l) { b.extend(l.getBounds()); });
+  MAP.map.fitBounds(b.pad(0.15), { maxZoom: 15, animate: true });
 }
 
 function updateMap() {

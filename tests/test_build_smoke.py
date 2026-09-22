@@ -25,6 +25,7 @@ REQUIRED = [
     "premises.json",
     "regression.json",
 ]
+# oa.geojson is optional: it needs census boundaries the build reads in place.
 DAYTYPES = ("all", "weekday", "weekend")
 
 pytestmark = pytest.mark.skipif(
@@ -167,10 +168,45 @@ def test_system_profile_and_census() -> None:
             rk = summary["rank"][var][b]
             assert rk["n"] >= 100 and rk["q05"] <= rk["median"] <= rk["q95"], (var, b)
             assert rk["top"][0]["value"] >= rk["top"][-1]["value"]
+    assert buffers == ["150", "250", "500"]      # 750 m retired
     assert len(summary["balance"]["250"]) >= 100
     for r in summary["balance"]["250"][:20]:
         assert r["workplace_pct"] >= 50   # sorted job-rich first
     assert summary["balance_kpi"]["250"]["job_rich"] + summary["balance_kpi"]["250"]["residential"] == len(summary["balance"]["250"])
+
+
+def test_workplace_uplift() -> None:
+    up = load("census_summary.json")["uplift"]
+    assert [r["buffer"] for r in up["by_buffer"]] == [150, 250, 500]
+    for r in up["by_buffer"]:
+        assert r["n"] >= 100 and r["median_pct"] <= r["mean_pct"]
+        assert r["aggregate_pct"] > 0            # jobs outnumber residents at every buffer
+    assert up["lo_buffer"] == 150 and up["hi_buffer"] == 500
+    movers = up["movers"]
+    assert 0 < len(movers) <= 12
+    changes = [abs(r["change_pp"]) for r in movers]
+    assert changes == sorted(changes, reverse=True)
+    for r in movers:
+        assert r["change_pp"] == pytest.approx(r["hi_pct"] - r["lo_pct"], abs=0.11)
+        assert r["dir"] == ("more job-rich" if r["change_pp"] >= 0 else "more residential")
+
+
+@pytest.mark.skipif(not (WEB_DATA / "oa.geojson").exists(), reason="built without --no-oa only")
+def test_output_areas() -> None:
+    fc = load("oa.geojson")
+    summary = load("census_summary.json")
+    assert fc["type"] == "FeatureCollection" and len(fc["features"]) > 1000
+    assert summary["oa"]["n"] == len(fc["features"])
+    assert set(summary["oa_scale"]) == set(summary["vars"])
+    for var, st in summary["oa_scale"].items():
+        assert st["q05"] <= st["median"] <= st["q95"], var
+    for f in fc["features"][:200]:
+        p = f["properties"]
+        assert p["code"].startswith("S00")
+        assert set(p) == set(summary["vars"]) | {"code"}
+        ring = f["geometry"]["coordinates"][0]
+        lon, lat = (ring[0] if f["geometry"]["type"] == "Polygon" else ring[0][0])[:2]
+        assert -4.6 <= lon <= -4.0 and 55.7 <= lat <= 56.0, p["code"]
 
 
 def test_premises_and_regression() -> None:

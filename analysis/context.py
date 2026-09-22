@@ -7,18 +7,20 @@ covariates (census buffers, licensed premises). Pure functions; no I/O.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 import pandas as pd
 
 EXPOSURE_TYPES: tuple[str, ...] = ("segregated", "lane", "shared", "mixed", "any")
-BUFFERS_M: tuple[int, ...] = (150, 250, 500, 750)
+BUFFERS_M: tuple[int, ...] = (150, 250, 500)
 
 # Station-buffer covariates shipped to the neighbourhood maps, with display
 # metadata. ``pct`` values are stored as fractions in the source and shown x100.
 # ``source`` names the table column when it differs from the key.
 CENSUS_VARS: dict[str, dict] = {
     "avg_age": {"label": "Average age", "unit": " yrs", "dp": 1,
-                "desc": "Mean age of residents in the buffer's data zones"},
+                "desc": "Mean age of residents in the buffer's output areas"},
     "student_share": {"label": "Students", "unit": "%", "dp": 1, "pct": True,
                       "desc": "Share of residents 16+ who are full-time students"},
     "avg_cars_per_household": {"label": "Cars per household", "unit": "", "dp": 2,
@@ -233,7 +235,8 @@ def census_table(
 
     Returns:
         ``{station: {buffer_m: {var: value}}}`` with ``pct`` variables scaled to
-        percent and every value rounded to its display precision.
+        percent and every value rounded to its display precision. Each buffer's
+        values come from the output areas its circle intersects.
     """
     merged = station_vars.merge(premises, on=["station_id", "buffer_m"], how="left")
     merged = merged.set_index(["station_id", "buffer_m"]).sort_index()
@@ -255,6 +258,27 @@ def census_table(
     return out
 
 
+def value_stats(values: Sequence[float]) -> dict:
+    """Spread of a set of values: min/max/mean/median, 5th and 95th percentile.
+
+    ``q05``/``q95`` are the colour range used by every choropleth, so the same
+    statistics describe station buffers and individual output areas.
+    """
+    if len(values) == 0:
+        return {"min": None, "max": None, "mean": None, "median": None,
+                "q05": None, "q95": None, "n": 0}
+    arr = np.asarray(values, dtype=float)
+    return {
+        "min": float(arr.min()),
+        "max": float(arr.max()),
+        "mean": round(float(arr.mean()), 3),
+        "median": round(float(np.median(arr)), 3),
+        "q05": round(float(np.quantile(arr, 0.05)), 3),
+        "q95": round(float(np.quantile(arr, 0.95)), 3),
+        "n": int(len(arr)),
+    }
+
+
 def variable_ranking(
     table: dict[str, dict[int, dict[str, float | None]]],
     var: str,
@@ -274,21 +298,13 @@ def variable_ranking(
         if buffer_m in buf and buf[buffer_m].get(var) is not None
     ]
     if not vals:
-        return {"top": [], "bottom": [], "min": None, "max": None, "mean": None,
-                "median": None, "q05": None, "q95": None, "n": 0}
+        return {"top": [], "bottom": [], **value_stats([])}
     vals.sort(key=lambda t: (-t[1], t[0]))
-    arr = np.array([v for _, v in vals], dtype=float)
     rows = [{"station": s, "value": v} for s, v in vals]
     return {
         "top": rows[:n],
         "bottom": list(reversed(rows[-n:])),
-        "min": float(arr.min()),
-        "max": float(arr.max()),
-        "mean": round(float(arr.mean()), 3),
-        "median": round(float(np.median(arr)), 3),
-        "q05": round(float(np.quantile(arr, 0.05)), 3),
-        "q95": round(float(np.quantile(arr, 0.95)), 3),
-        "n": int(len(arr)),
+        **value_stats([v for _, v in vals]),
     }
 
 
@@ -320,6 +336,78 @@ def population_balance(
         })
     rows.sort(key=lambda r: (-r["workplace_pct"], r["station"]))
     return rows
+
+
+def buffer_uplift(
+    table: dict[str, dict[int, dict[str, float | None]]],
+    buffers: tuple[int, ...] = BUFFERS_M,
+) -> list[dict]:
+    """How far workplace population exceeds resident population, per buffer.
+
+    Uplift is ``(workplace / residents - 1) * 100``: +100 % means twice as many
+    people work in the buffer as live in it. Stations with no residents have no
+    defined uplift and are left out of ``median_pct``/``mean_pct`` (``n`` counts
+    those that remain); ``aggregate_pct`` pools every station's people first, so
+    it is not affected by them.
+
+    Returns:
+        One row per buffer, ascending by radius:
+        ``{buffer, median_pct, mean_pct, aggregate_pct, job_rich, n}``.
+    """
+    out = []
+    for b in buffers:
+        rows = population_balance(table, b)
+        if not rows:
+            continue
+        pcts = [
+            (r["workplace"] / r["residents"] - 1) * 100
+            for r in rows
+            if r["residents"] > 0
+        ]
+        res = sum(r["residents"] for r in rows)
+        wp = sum(r["workplace"] for r in rows)
+        out.append({
+            "buffer": b,
+            "median_pct": round(float(np.median(pcts)), 1) if pcts else None,
+            "mean_pct": round(float(np.mean(pcts)), 1) if pcts else None,
+            "aggregate_pct": round((wp / res - 1) * 100, 1) if res else None,
+            "job_rich": sum(1 for r in rows if r["workplace"] > r["residents"]),
+            "n": len(pcts),
+        })
+    return out
+
+
+def uplift_movers(
+    table: dict[str, dict[int, dict[str, float | None]]],
+    lo_buffer: int,
+    hi_buffer: int,
+    n: int = 12,
+) -> list[dict]:
+    """Stations whose workplace share shifts most as the buffer widens.
+
+    Measured on ``workplace_pct`` (bounded 0-100) rather than the unbounded
+    uplift ratio, so the change is readable in percentage points.
+
+    Returns:
+        Up to ``n`` rows ``{station, lo_pct, hi_pct, change_pp, dir}`` sorted by
+        the size of the change, largest first. ``dir`` is ``"more job-rich"``
+        when the wider buffer is more workplace-heavy, else
+        ``"more residential"``.
+    """
+    lo = {r["station"]: r["workplace_pct"] for r in population_balance(table, lo_buffer)}
+    hi = {r["station"]: r["workplace_pct"] for r in population_balance(table, hi_buffer)}
+    rows = []
+    for s in sorted(set(lo) & set(hi)):
+        change = hi[s] - lo[s]
+        rows.append({
+            "station": s,
+            "lo_pct": lo[s],
+            "hi_pct": hi[s],
+            "change_pp": round(change, 1),
+            "dir": "more job-rich" if change >= 0 else "more residential",
+        })
+    rows.sort(key=lambda r: (-abs(r["change_pp"]), r["station"]))
+    return rows[:n]
 
 
 def network_summary(

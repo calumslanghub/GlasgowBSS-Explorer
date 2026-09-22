@@ -55,8 +55,10 @@ controls:
     widget: radio
     hash: mode
     options:
-      - { value: buffers, label: "Census buffers", colour: "$scale.mid" }
-      - { value: bars, label: "Residents vs workplace", colour: "$balance.workplace" }
+      - { value: buffers, label: "Census map", colour: "$scale.mid" }
+      # The columns only read as a pattern city-wide, so picking them reframes
+      # the map on the whole network.
+      - { value: bars, label: "Residents vs workplace", colour: "$balance.workplace", fit: all }
   census_var:
     label: "Variable"
     state: census_var
@@ -73,7 +75,6 @@ controls:
       - { value: "150", label: "150 m" }
       - { value: "250", label: "250 m" }
       - { value: "500", label: "500 m" }
-      - { value: "750", label: "750 m" }
   segmode:
     label: "Segregated"
     state: seg_mode
@@ -250,10 +251,11 @@ layers:
     show_if: { station: false }
     title: "Who lives and works around each station"
     body: >-
-      The dissertation described every station by the census data zones within 150 to 750 m
-      of it (age, students, cars, health, socio-economic class, commuting distance) plus the
-      pubs, bars and restaurants licensed nearby. These are the controls in the regression on
-      the last page. Pick a variable to colour the station buffers, or switch to the
+      The dissertation described every station by the Census 2022 output areas within 150 to
+      500 m of it (age, students, cars, health, socio-economic class, commuting distance) plus
+      the pubs, bars and restaurants licensed nearby. These are the controls in the regression
+      on the last page. The map colours the output areas themselves; click a station to see
+      its buffer, and the average the regression actually used. Or switch to the
       residents-versus-workplace view to see which stations sit in job-rich and which in
       residential areas.
 
@@ -301,8 +303,9 @@ layers:
     render: kpi
     show_if: { station: false, nbhd_mode: bars }
     title: "Residents vs workplace population, {buffer} buffer"
+    subtitle: "Summed over every station's buffer, so overlapping buffers count twice"
     items:
-      - { key: residents, label: "Residents 16+ (all buffers)", dp: 0, colour: "$balance.residents" }
+      - { key: residents, label: "Residents 16+", dp: 0, colour: "$balance.residents" }
       - { key: workplace, label: "Workplace population", dp: 0, colour: "$balance.workplace" }
       - { key: job_rich, label: "Job-rich stations (workplace > residents)", dp: 0 }
       - { key: residential, label: "Residential stations", dp: 0 }
@@ -340,6 +343,45 @@ layers:
     tip_keys:
       - { key: workplace_pct, label: "Workplace share", dp: 1, unit: "%" }
 
+  uplift_by_buffer:
+    file: census_summary.json
+    scope: global
+    path: [uplift, by_buffer]
+    render: bar
+    orientation: vertical
+    show_if: { station: false, nbhd_mode: bars }
+    title: "Jobs cluster tighter than homes"
+    subtitle: "Median station uplift: how far workplace population exceeds residents 16+"
+    x_key: buffer
+    x_suffix: " m"
+    value_key: median_pct
+    unit: "%"
+    colour: "$balance.workplace"
+    tip_keys:
+      - { key: mean_pct, label: "Mean station", dp: 0, unit: "%" }
+      - { key: aggregate_pct, label: "All stations pooled", dp: 0, unit: "%" }
+      - { key: job_rich, label: "Job-rich stations", dp: 0 }
+
+  uplift_movers:
+    file: census_summary.json
+    scope: global
+    path: [uplift, movers]
+    render: bar
+    orientation: horizontal
+    show_if: { station: false, nbhd_mode: bars }
+    title: "Stations that change most as the buffer widens"
+    subtitle: "Change in workplace share of population, 150 m to 500 m buffer"
+    label_key: station
+    value_key: change_pp
+    unit: "pp"
+    colour_key: dir
+    colour_map:
+      "more job-rich": "$balance.workplace"
+      "more residential": "$balance.residents"
+    tip_keys:
+      - { key: lo_pct, label: "Workplace share at 150 m", dp: 1, unit: "%" }
+      - { key: hi_pct, label: "Workplace share at 500 m", dp: 1, unit: "%" }
+
   station_profile:
     file: census_by_station.json
     scope: station
@@ -347,7 +389,7 @@ layers:
     render: kpi
     compact: true
     title: "Neighbourhood, {buffer} buffer"
-    subtitle: "Census 2022 data zones intersecting the buffer; licensed premises within it"
+    subtitle: "Census 2022 output areas intersecting the buffer; licensed premises within it"
     items_from: { file: census_summary.json, field: vars }
 
   # ── 3 Cycle infrastructure ────────────────────────────────────────────────
@@ -594,7 +636,8 @@ layers:
 # order (station layers only render once a station is selected; `show_if`
 # hides others) and says what the map should overlay while the tab is active.
 #   map.stations: sized (radius by trips) | dots (uniform) | "$state_key"
-#                 resolving to buffers (census choropleth) | bars (2.5D columns)
+#                 resolving to buffers (output-area choropleth, plus the
+#                 selected station's buffer) | bars (2.5D columns)
 #   map.select:   false disables station selection (no pointer, no picker)
 #   map.timeline: none | dates (date slider) | hours (standard-day player)
 #   map.infra:    none | all | timeline | segregated
@@ -617,12 +660,12 @@ views:
   neighbourhoods:
     title: "Neighbourhoods"
     phase: 2
-    layers: [nbhd_intro, census_kpi, census_top, census_bottom, balance_kpi, balance_top, balance_bottom, station_profile]
+    layers: [nbhd_intro, census_kpi, census_top, census_bottom, balance_kpi, balance_top, balance_bottom, uplift_by_buffer, uplift_movers, station_profile]
     map: { lines: [], infra: none, loads: none, heat: premises, timeline: none, stations: "$nbhd_mode", select: true }
     controls: [nbhd_mode, census_var, buffer]
-    legend: [scale, heat, stations]
-    prompt: "Click a station to see its full neighbourhood profile at the selected buffer."
-    hint: "buffer colour = value of the selected variable; toggle the licensed-premises heat map in the legend"
+    legend: [scale, oa, heat, stations]
+    prompt: "Click a station to see its buffer on the map and its full neighbourhood profile."
+    hint: "output-area colour = value of the selected variable; toggle the licensed-premises heat map in the legend"
 
   timeline:
     title: "Cycle infrastructure"

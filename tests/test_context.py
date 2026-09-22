@@ -130,6 +130,50 @@ def test_variable_ranking_and_population_balance(station_vars: pd.DataFrame, pre
     assert bal[1]["log_ratio"] < 0
 
 
+def test_value_stats_describes_the_spread() -> None:
+    s = context.value_stats([1.0, 2.0, 3.0, 4.0])
+    assert s["min"] == 1.0 and s["max"] == 4.0 and s["n"] == 4
+    assert s["mean"] == 2.5 and s["median"] == 2.5
+    assert s["q05"] < s["q95"]
+    assert context.value_stats([])["n"] == 0
+
+
+@pytest.fixture
+def balance_vars() -> pd.DataFrame:
+    """Two stations at two buffers; C has no residents at 150 m."""
+    return pd.DataFrame(
+        {
+            "station_id": ["A", "A", "C", "C"], "buffer_m": [150, 500, 150, 500],
+            "over16pop": [100, 800, 0, 500], "workplace_pop": [300, 400, 50, 500],
+        }
+    )
+
+
+def test_buffer_uplift(balance_vars: pd.DataFrame) -> None:
+    empty = pd.DataFrame(columns=["station_id", "buffer_m", "n_on_premises", "total_capacity_on"])
+    t = context.census_table(balance_vars, empty, ["A", "C"], buffers=(150, 500))
+    rows = context.buffer_uplift(t, buffers=(150, 500))
+    assert [r["buffer"] for r in rows] == [150, 500]
+    # 150 m: only A has residents (300/100 - 1 = +200 %); C is left out of n.
+    assert rows[0]["median_pct"] == pytest.approx(200.0) and rows[0]["n"] == 1
+    assert rows[0]["job_rich"] == 2
+    # Pooling people first keeps the zero-resident station in: 350/100 - 1.
+    assert rows[0]["aggregate_pct"] == pytest.approx(250.0)
+    # 500 m: A is -50 %, C is 0 % -> median -25 %.
+    assert rows[1]["median_pct"] == pytest.approx(-25.0) and rows[1]["n"] == 2
+
+
+def test_uplift_movers_signs_and_orders(balance_vars: pd.DataFrame) -> None:
+    empty = pd.DataFrame(columns=["station_id", "buffer_m", "n_on_premises", "total_capacity_on"])
+    t = context.census_table(balance_vars, empty, ["A", "C"], buffers=(150, 500))
+    rows = context.uplift_movers(t, 150, 500)
+    # C swings 100 % -> 50 % (-50 pp); A 75 % -> 33.3 % (-41.7 pp). Biggest first.
+    assert [r["station"] for r in rows] == ["C", "A"]
+    assert rows[0]["change_pp"] == pytest.approx(-50.0)
+    assert all(r["dir"] == "more residential" for r in rows)
+    assert context.uplift_movers(t, 150, 500, n=1) == rows[:1]
+
+
 def test_network_summary(od: pd.DataFrame, panel: pd.DataFrame, labels: pd.DataFrame) -> None:
     s = context.network_summary(od, context.pair_exposure(panel), context.commuter_lookup(labels))
     assert s["trips"] == 130 and s["pairs"] == 4

@@ -17,7 +17,7 @@ var S = {
   buffer: '250',        // buffer radius (m) — neighbourhoods
   seg_mode: 'all',      // 'all' | 'commuter' — regression map
   show: {               // legend toggles
-    origin: true, destination: true, stations: true, heat: false,
+    origin: true, destination: true, stations: true, heat: false, oa: true,
     infra: { segregated: true, lane: true, shared: true, mixed: true },
     corridor: { commuter: true, 'non-commuter': true }
   }
@@ -142,9 +142,14 @@ function syncHeat() {
 }
 
 // A legend control changed (day type, census variable, buffer, ...).
+// An option carrying `fit: all` reframes the map on the whole network — some
+// layers (the population columns) only read as a pattern city-wide.
 function setControl(stateKey, value) {
   S[stateKey] = value;
   if (stateKey === 'census_var') syncHeat();
+  var ctrl = controlFor(stateKey);
+  var opt = ctrl ? controlOptions(ctrl).find(function (o) { return o.value === String(value); }) : null;
+  if (opt && opt.fit === 'all') fitStations();
   renderPanels();
   updateMap();
   writeHash();

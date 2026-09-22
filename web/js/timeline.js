@@ -44,6 +44,8 @@ function setTimelineMode(mode) {
   if (TL.mode === 'hours' && mode !== 'hours') S.hour = null;
   TL.mode = mode === 'none' ? null : mode;
   bar.hidden = !TL.mode;
+  // Lifts the map's bottom-left controls (the scale bar) clear of the slider.
+  document.getElementById('map-wrap').classList.toggle('with-timeline', !!TL.mode);
   if (!TL.mode) return;
   var spec = TL_MODES[TL.mode];
   TL.values = spec.values();

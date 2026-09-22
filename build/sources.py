@@ -40,6 +40,15 @@ INFRA_SHP: Path = Path(
         "DISS_INFRA_SHP", DISS_DIR / "CyclingRoutes" / "Cycling_Routes_Open.shp"
     )
 )
+# Census 2022 output areas (NRS): the boundary shapefile and the count tables
+# the dissertation scored station buffers with.
+OA_SHP: Path = Path(
+    os.environ.get(
+        "DISS_OA_SHP",
+        DISS_DIR / "CensusData" / "DZshp" / "OutputArea2022_MHW" / "OutputArea2022_MHW.shp",
+    )
+)
+CENSUS_DIR: Path = Path(os.environ.get("DISS_CENSUS_DIR", DISS_DIR / "CensusData"))
 
 # Cached OSMnx bike network (gitignored; rebuilt on demand).
 GRAPH_FILE: Path = CACHE_DIR / "glasgow_bike.graphml"

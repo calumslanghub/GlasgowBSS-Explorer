@@ -102,7 +102,11 @@ button { font-family: var(--font); cursor: pointer; }
 .leaflet-container { font-family: var(--font); }
 .station-tip { font-size: 0.78rem; }
 .station-tip b { display: block; }
+.oa-tip b { display: block; }
 .leaflet-control-attribution { font-size: 0.62rem; }
+.leaflet-control-scale-line { font-size: 0.66rem; line-height: 1.2; background: rgba(255,255,255,0.8); }
+/* Keep the scale bar off the slider on the views that show one. */
+#map-wrap.with-timeline .leaflet-bottom.leaflet-left { bottom: 92px; }
 
 /* ── Slider bar (phase 2 dates; phase 1 standard day) ───────────────────── */
 #timeline {

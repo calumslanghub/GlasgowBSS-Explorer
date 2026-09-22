@@ -14,6 +14,10 @@ var DATA = {
 // Map layers that are not manifest layers but the map always needs.
 var MAP_FILES = ['stations.json', 'routes.json', 'infra.geojson', 'corridor_load.geojson', 'segregated.geojson',
                  'premises.json', 'census_by_station.json', 'census_summary.json', 'system_profile.json'];
+// Files the map uses when they exist. The output-area choropleth needs census
+// boundaries the build can only reach on the author's machine, so a build
+// without it must still produce a working site (the map falls back to buffers).
+var OPTIONAL_FILES = ['oa.geojson'];
 
 function fetchJSON(path) {
   return fetch(path, { cache: 'no-cache' }).then(function (r) {
@@ -30,9 +34,12 @@ function loadAll() {
     MAP_FILES.forEach(function (f) { names[f] = 1; });
     Object.values(m.layers).forEach(function (l) { if (l.file) names[l.file] = 1; });
     Object.values(m.controls || {}).forEach(function (c) { if (c.options_from) names[c.options_from.file] = 1; });
+    OPTIONAL_FILES.forEach(function (f) { delete names[f]; });
     return Promise.all(Object.keys(names).map(function (f) {
       return fetchJSON('data/' + f).then(function (json) { DATA.files[f] = json; });
-    }));
+    }).concat(OPTIONAL_FILES.map(function (f) {
+      return fetchJSON('data/' + f).then(function (json) { DATA.files[f] = json; }, function () {});
+    })));
   }).then(function () {
     // Standard-day marker scale: trips per day so weekdays and weekends compare.
     var od = DATA.files['od_by_station.json'] || {};
@@ -99,7 +106,7 @@ function showIf(cond, state) {
 
 // ── Controls (manifest.controls) ─────────────────────────────────────────────
 function controlOptions(ctrl) {
-  if (ctrl.options) return ctrl.options.map(function (o) { return { value: String(o.value), label: o.label, colour: o.colour }; });
+  if (ctrl.options) return ctrl.options.map(function (o) { return { value: String(o.value), label: o.label, colour: o.colour, fit: o.fit }; });
   if (ctrl.options_from) {
     var src = (DATA.files[ctrl.options_from.file] || {})[ctrl.options_from.field] || {};
     return Object.keys(src).map(function (k) { return { value: k, label: src[k].label || k, title: src[k].desc }; });
@@ -142,11 +149,22 @@ function censusValue(id) {
   var v = r ? r[S.census_var] : null;
   return v === undefined ? null : v;
 }
-// Colour range for the choropleth: 5th to 95th percentile of the variable.
+// Colour range for the choropleth: 5th to 95th percentile of the variable
+// across the output areas, so a station's buffer is coloured on the same scale
+// as the areas it covers and reads as their average. Falls back to the spread
+// across station buffers when the output-area layer was not built.
 function censusScale() {
-  var rk = (((DATA.files['census_summary.json'] || {}).rank || {})[S.census_var] || {})[S.buffer];
-  if (!rk || rk.n === 0) return null;
-  return { lo: rk.q05, hi: rk.q95, rank: rk };
+  var sum = DATA.files['census_summary.json'] || {};
+  var st = (sum.oa_scale || {})[S.census_var];
+  if (!st) st = ((sum.rank || {})[S.census_var] || {})[S.buffer];
+  if (!st || st.n === 0) return null;
+  return { lo: st.q05, hi: st.q95, stats: st };
+}
+// A value's 0-1 position on the colour ramp (null when there is no value).
+function censusRamp(v) {
+  var sc = censusScale();
+  if (!sc || v === null || v === undefined) return null;
+  return sc.hi > sc.lo ? (v - sc.lo) / (sc.hi - sc.lo) : 0.5;
 }
 
 function stations() { return DATA.files['stations.json'] || []; }

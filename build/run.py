@@ -3,6 +3,7 @@
 Options:
   --no-routes   straight-line routes; skips the corridor and segregated flow maps
   --no-trips    skip the trip file (no hourly split / first-trip dates)
+  --no-oa       skip the output-area choropleth (the map falls back to buffers)
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import logging
 import sys
 import time
 
+from build import census_oa as census_oa_mod
 from build import context as context_mod
 from build import infra as infra_mod
 from build import manifest as manifest_mod
@@ -28,6 +30,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Rebuild web/data/*.json")
     p.add_argument("--no-routes", action="store_true", help="straight lines, no OSMnx")
     p.add_argument("--no-trips", action="store_true", help="skip the trip file")
+    p.add_argument("--no-oa", action="store_true", help="skip the output-area layer")
     return p.parse_args(argv)
 
 
@@ -49,8 +52,9 @@ def main(argv: list[str] | None = None) -> int:
     summary = od_build.write_od_by_station(od, names, agg)
     od_build.write_system_profile(od, agg)
 
-    print("3/9  Neighbourhood covariates + licensed premises")
-    context_mod.write_census(names)
+    print("3/9  Output areas, neighbourhood covariates + licensed premises")
+    oa = {} if args.no_oa else census_oa_mod.write_oa(stations)
+    context_mod.write_census(names, oa)
     premises_mod.write_premises()
 
     print("4/9  Corridors & commuter labels")
