@@ -6,7 +6,7 @@
    "field": "kpi",
    "render": "text",
    "title": "How Glasgow used its bike share",
-   "body": "[DRAFT] {summary.trips} trips between {summary.stations} nextbike stations, September 2017 to April 2024. Weekdays carry about {weekday_per_day} trips a day with a morning and an evening commuting peak; weekend days carry {weekend_per_day}, spread across the afternoon. Station size shows how many trips start or end there. Click a station to see its top five destinations and origins, and use the Days switch to compare weekdays with weekends. Press play under the map to watch a standard day hour by hour."
+   "body": "The data includes {summary.trips} trips between {summary.stations} nextbike stations, between September 2017 to April 2024. Weekdays carry about {weekday_per_day} trips a day with a morning and an evening commuting peak; weekend days carry {weekend_per_day}, spread across the afternoon. The station size varies depending on how many trips start or end there. Clicking a station reveals its top five origins and destinations. Through selecting in the legend you can compare weekdays with weekends. Pressing play under the map to shows the origin destination flow of a selected day type hour by hour."
   },
   "system_kpi": {
    "file": "system_profile.json",
@@ -1564,7 +1564,7 @@
  "page": {
   "title": "Glasgow Bike-Share Explorer",
   "subtitle": "Commuter-specific effects of segregated cycle infrastructure on bike-share use in Glasgow · MSc Urban Analytics, University of Glasgow",
-  "intro": "[DRAFT] Between September 2017 and April 2024 Glasgow's nextbike bike-share system logged {summary.trips} trips between {summary.stations} docking stations. In my MSc dissertation I used the trip data to assess the effect of cycle infrastructure on bike-share usage and how the effect differs along commuter corridors. Every station pair was routed on the bike network and scored for its exposure to cycle infrastructure as the network grew, a k-means clustering picked out commuter corridors, and a negative-binomial gravity model estimated the effect. The headline: segregated lanes are associated with far more trips on commuter corridors, and those corridors are currently under-served. Scroll through the analysis below; every map and chart is interactive.",
+  "intro": "Increasing active travel as a mode of transportation is a key policy goal of the Scottish  Government. Active travel provides health benefits to the population while reducing  dependence on private cars and the associated greenhouse gas emissions. Central to the aim  of increasing active travel use is the improvement of active travel infrastructure. My dissertation applied a negative binomial gravity model to 11,060 origin-destination pairs  derived from data of 1,202,020 trips taken using Glasgow’s nextbike bike sharing system.  Of the 11,060 origin-destination pairs 766 were identified as commuter corridors through k means clustering. Segregated lane infrastructure was found to be associated with a higher rate  of trips, an effect concentrated on commuter corridors (IRR 3.30 per unit of exposure) and  retained statistical significance under two-way Cameron, Gelbach, Miller clustering. The following maps and graphs display the data and the regression results, alongside the station-level variables used in the regression model.",
   "headline": [
    {
     "file": "manifest",
@@ -1603,7 +1603,7 @@
    "neighbourhoods": {
     "title": "Surrounding Neighbourhood",
     "number": "2",
-    "body": "[DRAFT] The surrounding characteristics of each station influence its usage. The following three maps display the station-level variables included within the regression model."
+    "body": "The surrounding characteristics of each station influence its usage. The following three maps display the station-level variables included within the regression model."
    }
   },
   "notes": {
