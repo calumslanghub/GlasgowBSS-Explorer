@@ -20,6 +20,7 @@ TOP_N: int = 10
 BUFFER_M: int = 250
 RANK_N: int = 10
 MOVERS_N: int = 12
+OUTPERFORM_N: int = 15
 
 
 def load_inputs() -> tuple[pd.DataFrame, dict, pd.DataFrame, pd.DataFrame]:
@@ -134,6 +135,11 @@ def write_census(
         "uplift": {
             "by_buffer": ctx.buffer_uplift(table),
             "movers": ctx.uplift_movers(table, lo_buffer, hi_buffer, MOVERS_N),
+            "outperform": {
+                str(b): ctx.uplift_outperformers(table, b, OUTPERFORM_N)
+                for b in ctx.BUFFERS_M
+            },
+            "by_station": ctx.station_uplift(table),
             "lo_buffer": lo_buffer,
             "hi_buffer": hi_buffer,
         },

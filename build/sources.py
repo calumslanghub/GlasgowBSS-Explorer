@@ -24,7 +24,9 @@ DISS_DIR: Path = Path(os.environ.get("DISS_DIR", REPO_ROOT.parent))
 STATIONS_CSV: Path = RAW_DIR / "glasgow_stations.csv"
 OD_CSV: Path = RAW_DIR / "glasgowOD.csv"
 OD_PANEL_CSV: Path = RAW_DIR / "glasgow_od_panel_collapsed.csv"
-COMMUTER_CSV: Path = RAW_DIR / "commuter_labels.csv"
+# The labels the regression used (RegressionRun.ipynb): Laplace-smoothed
+# weekday ratio, 383 commuter pairs. commuter_labels.csv is an older run.
+COMMUTER_CSV: Path = RAW_DIR / "precovidcommuter_labels.csv"
 STATION_VARS_CSV: Path = RAW_DIR / "station_independent_variables.csv"
 STATION_PREMISES_CSV: Path = RAW_DIR / "station_on_premises.csv"
 EPOCHS_CSV: Path = RAW_DIR / "glasgow_epochs.csv"

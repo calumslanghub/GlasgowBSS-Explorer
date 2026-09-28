@@ -120,7 +120,8 @@ def pair_polylines(rs: RouteSet, pairs: set[Pair]) -> dict[str, list]:
     """Merged, simplified WGS84 polylines for the given pairs (Leaflet order)."""
     keys, geoms = [], []
     for a, b in sorted(pairs):
-        edges = rs.pair_edges.get((a, b))
+        # Unordered pairs (the k-means scatter) may only exist as b -> a.
+        edges = rs.pair_edges.get((a, b)) or rs.pair_edges.get((b, a))
         if not edges:
             continue
         merged = linemerge([rs.edge_geoms[e] for e in edges])

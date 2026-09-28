@@ -12,7 +12,7 @@ infra:
   mixed: "#fdd522"         # yellow
 
 corridor:
-  commuter: "#741e6d"      # purple
+  commuter: "#b04fa8"      # purple (lifted from the dissertation #741e6d to read on the dark map)
   "non-commuter": "#28a197"  # teal (unlabelled pairs are counted here)
 
 daytype:
@@ -28,14 +28,15 @@ scale:
 # Residents vs workplace population.
 balance:
   residents: "#5eb135"     # Cycle green
-  workplace: "#741e6d"     # purple (where commuters go)
+  workplace: "#b04fa8"     # purple (where commuters go)
+  median: "#9e9e9e"        # grey (median station, beside the pooled bar)
 
 # Coefficient-plot groups.
 regression:
   gravity: "#5e5e5e"
   infrastructure: "#1a7032"
   neighbourhood: "#0065bd"
-  commuter: "#741e6d"
+  commuter: "#b04fa8"
 
 ui:
   accent: "#0065bd"
@@ -44,3 +45,12 @@ ui:
   station: "#002d54"
   station_selected: "#fdd522"
   station_dim: "#b3b3b3"
+  highlight: "#c49a00"     # dark gold: the selected station in charts
+
+# Dark grey basemap (Esri Dark Gray Canvas). Station dots are light so they read
+# on it; the ui.station navy stays for charts on the white side panel.
+basemap:
+  station: "#e6edf5"
+  station_line: "#1b1f24"
+  oa_line: "#30343b"
+  bg: "#2b2d31"

@@ -41,7 +41,9 @@ function rowsFromData(data, meta) {
       return { label: r.label, value: data ? data[r.key] : null, colour: r.colour, key: r.key };
     });
   } else {
-    rows = Array.isArray(data) ? data.slice() : [];
+    // A data object carrying `rows` (plus scalars such as a ref_key) is fine too.
+    var list = Array.isArray(data) ? data : (data && Array.isArray(data.rows) ? data.rows : []);
+    rows = list.slice();
   }
   if (meta.head) rows = rows.slice(0, meta.head);
   if (meta.tail) rows = rows.slice(-meta.tail).reverse();
@@ -84,16 +86,17 @@ var markerPlugin = {
 };
 
 // Reference line plugin: dashed line at a data value on the value axis
-// (chart.$refValue on scale chart.$refAxis, 'x' or 'y').
+// (chart.$refValue on scale chart.$refAxis, 'x' or 'y'), drawn over the bars
+// so a benchmark every bar exceeds stays visible.
 var refLinePlugin = {
   id: 'refLine',
-  beforeDatasetsDraw: function (chart) {
+  afterDatasetsDraw: function (chart) {
     var v = chart.$refValue;
     if (v === undefined || v === null) return;
     var scale = chart.scales[chart.$refAxis || 'x'];
     if (!scale) return;
     var ctx = chart.ctx, area = chart.chartArea;
-    ctx.save(); ctx.strokeStyle = '#5e5e5e'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+    ctx.save(); ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
     ctx.beginPath();
     if (chart.$refAxis === 'y') {
       var y = scale.getPixelForValue(v); ctx.moveTo(area.left, y); ctx.lineTo(area.right, y);
@@ -147,7 +150,7 @@ function tipExtras(r, meta) {
 
 // ── GENERIC 1: bar ────────────────────────────────────────────────────────────
 RENDERERS.bar = function (container, data, meta, state) {
-  var c = makeCard(meta, state);
+  var c = makeCard(meta, state, data);
   container.appendChild(c.card);
   var horizontal = (meta.orientation || 'horizontal') === 'horizontal';
   var rows = rowsFromData(data, meta);
@@ -233,7 +236,7 @@ RENDERERS.bar = function (container, data, meta, state) {
               var iv = meta.intervals[item.datasetIndex];
               return ' ' + iv.label + ': ' + fmtNum(r[iv.lo_key], 3) + ' to ' + fmtNum(r[iv.hi_key], 3);
             }
-            var dp = meta.series && meta.percent ? 1 : (unit ? 1 : 0);
+            var dp = meta.dp !== undefined ? meta.dp : (meta.series && meta.percent ? 1 : (unit ? 1 : 0));
             var txt = ' ' + (item.dataset.label || '') + ': ' + fmtNum(item.parsed[horizontal ? 'x' : 'y'], dp, unit);
             if (item.dataset.raw) txt += '  (' + fmtNum(item.dataset.raw[item.dataIndex]) + ' trips)';
             return txt;
@@ -249,23 +252,24 @@ RENDERERS.bar = function (container, data, meta, state) {
            ticks: { maxRotation: 0, autoSkip: !horizontal, maxTicksLimit: 10, callback: function (v) { return horizontal ? fmtNum(v, meta.intervals ? 1 : 0, unit) : this.getLabelForValue(v); } } },
       y: { stacked: !!meta.stacked, grid: { display: !horizontal }, beginAtZero: true,
            max: horizontal ? undefined : (meta.percent ? 100 : meta.max),
-           ticks: { autoSkip: false, font: { size: horizontal ? 10 : 11 }, callback: function (v) { return horizontal ? this.getLabelForValue(v) : fmtNum(v, 0, unit); } },
+           ticks: { autoSkip: false, font: { size: horizontal ? 10 : 11 }, callback: function (v) { return horizontal ? this.getLabelForValue(v) : fmtNum(v, meta.dp ? 1 : 0, unit); } },
            title: { display: !horizontal && !!meta.y_label, text: meta.y_label } }
     }
   };
   var plugins = [pointsPlugin];
   if (meta.marker) plugins.push(markerPlugin);
-  if (meta.ref_line !== undefined) plugins.push(refLinePlugin);
+  var ref = meta.ref_key ? (data || {})[meta.ref_key] : meta.ref_line;
+  if (ref !== undefined && ref !== null) plugins.push(refLinePlugin);
   var chart = new Chart(canvas.getContext('2d'), { type: 'bar', data: { labels: labels, datasets: datasets }, options: opts, plugins: plugins });
   chart.$rows = rows;
-  if (meta.ref_line !== undefined) { chart.$refValue = meta.ref_line; chart.$refAxis = horizontal ? 'x' : 'y'; }
+  if (ref !== undefined && ref !== null) { chart.$refValue = ref; chart.$refAxis = horizontal ? 'x' : 'y'; }
   if (legendItems) c.body.appendChild(swatchLegend(legendItems));
   var lg = categoryLegend(meta);
   if (lg) c.body.appendChild(lg);
   function update(st) {
     if (!meta.marker || horizontal) return;
     var v = st[meta.marker];
-    chart.$markerIndex = (v === null || v === undefined) ? -1 : rows.findIndex(function (r) { return r[meta.x_key] === v; });
+    chart.$markerIndex = (v === null || v === undefined) ? -1 : rows.findIndex(function (r) { return String(r[meta.x_key]) === String(v); });
     chart.draw();
   }
   update(state);
@@ -369,19 +373,333 @@ RENDERERS.kpi = function (container, data, meta, state) {
 };
 
 // ── GENERIC 4: text (narrative card) ──────────────────────────────────────────
-// {key} placeholders read the layer's data object; {summary.key} reads the
-// build summary in the manifest. Numbers are formatted with thousands separators.
+// Placeholders: {summary.key} (build summary), {note} (page.notes for the
+// value of state[meta.note_state]), {note_<var>} (page.notes[var]), a control's
+// state key ({census_var} -> its option label), else the layer's data object.
 RENDERERS.text = function (container, data, meta, state) {
   var c = makeCard(meta, state);
   c.card.classList.add('card-text');
   container.appendChild(c.card);
+  var notes = (DATA.manifest.page || {}).notes || {};
   var body = String(meta.body || '').replace(/\{([\w.]+)\}/g, function (m, key) {
     var v;
     if (key.indexOf('summary.') === 0) v = (DATA.manifest.summary || {})[key.slice(8)];
+    else if (key === 'note') v = notes[state[meta.note_state]];
+    else if (key.indexOf('note_') === 0) v = notes[key.slice(5)];
+    else if (controlFor(key)) v = controlLabel(key, state);
     else v = data ? data[key] : undefined;
     if (v === undefined || v === null) return '–';
     return typeof v === 'number' ? fmtNum(v, Number.isInteger(v) ? 0 : 2) : String(v);
   });
   c.body.appendChild(el('p', '', body));
   return { chart: null, update: function () {} };
+};
+
+// ── GENERIC 5: table (rows held in a state key) ───────────────────────────────
+// A compact list of the rows in state[meta.rows_from_state] (e.g. the k-means
+// pairs picked on the scatter). Clicking a row calls focusPair(row).
+RENDERERS.table = function (container, data, meta, state) {
+  var c = makeCard(meta, state);
+  container.appendChild(c.card);
+  var rows = (state[meta.rows_from_state] || []).slice();
+  if (!rows.length) { c.body.appendChild(el('div', 'card-empty', meta.empty || 'Nothing selected.')); return null; }
+  if (meta.sort_key) rows.sort(function (a, b) { return num(b[meta.sort_key]) - num(a[meta.sort_key]); });
+  var nc = rows.filter(function (r) { return r.c; }).length;
+  var trips = rows.reduce(function (t, r) { return t + num(r.trips); }, 0);
+  c.body.appendChild(el('div', 'table-sum',
+    '<b>' + fmtNum(rows.length) + '</b> pairs · <b>' + fmtNum(nc) + '</b> commuter · <b>' + fmtNum(rows.length - nc) +
+    '</b> non-commuter · <b>' + fmtNum(trips) + '</b> trips' +
+    (rows.length > (meta.limit || 1e9) ? ' · busiest ' + meta.limit + ' listed' : '')));
+  var wrap = el('div', 'table-wrap');
+  var t = el('table', 'data-table');
+  var head = el('tr');
+  meta.columns.forEach(function (col) { head.appendChild(el('th', col.dp !== undefined ? 'num' : '', col.label)); });
+  t.appendChild(el('thead')).appendChild(head);
+  var tb = el('tbody');
+  var cols = DATA.manifest.colours.corridor;
+  rows.slice(0, meta.limit || rows.length).forEach(function (r) {
+    var tr = el('tr');
+    if (state.focusPair && state.focusPair.a === r.a && state.focusPair.b === r.b) tr.className = 'on';
+    meta.columns.forEach(function (col) {
+      var v = col.key === 'pair' ? shortName(r.a, 30) + ' ↔ ' + shortName(r.b, 30) : r[col.key];
+      if (col.map) {
+        var lab = col.map[String(v)] || v;
+        v = '<i class="dot" style="background:' + (cols[lab] || '#999') + '"></i>' + lab;
+      } else if (col.dp !== undefined) {
+        v = fmtNum(v, col.dp, col.unit);
+      }
+      var td = el('td', col.dp !== undefined ? 'num' : '', v);
+      if (col.key === 'pair') td.title = r.a + ' ↔ ' + r.b;
+      tr.appendChild(td);
+    });
+    tr.addEventListener('click', bindSec(function () { focusPair(r); }));
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb);
+  wrap.appendChild(t);
+  c.body.appendChild(wrap);
+  return { chart: null, update: function () {} };
+};
+
+// ── GENERIC 6: scatter (Plotly, loaded on first use) ──────────────────────────
+// Rows with numeric metrics (meta.metrics_from: {key: {label, note}}); the
+// viewer switches 1 to 3 metrics on:
+//   1 metric  -> strip plot, one band per colour group (lasso/box select)
+//   2 metrics -> 2D scatter (lasso/box select)
+//   3 metrics -> 3D scatter (drag to rotate; click a point; range sliders
+//                select a region, since Plotly has no 3D lasso)
+// Selections go to setPairs() (app.js) under state[meta.select]; the handle's
+// highlight(rows, focus) restyles points when the selection changes elsewhere.
+var PLOTLY_SRC = 'https://cdn.jsdelivr.net/npm/plotly.js-gl3d-dist-min@2.35.2/plotly-gl3d.min.js';
+var plotlyReady = null;
+function loadPlotly() {
+  if (window.Plotly) return Promise.resolve(window.Plotly);
+  if (!plotlyReady) {
+    plotlyReady = new Promise(function (resolve, reject) {
+      var sc = document.createElement('script');
+      sc.src = PLOTLY_SRC; sc.async = true;
+      sc.onload = function () { resolve(window.Plotly); };
+      sc.onerror = function () { reject(new Error('Plotly failed to load')); };
+      document.head.appendChild(sc);
+    });
+  }
+  return plotlyReady;
+}
+
+RENDERERS.scatter = function (container, data, meta, state) {
+  // Plotly events arrive after this function returns, so handlers are bound
+  // to the section now rather than when they are attached.
+  var sec = SEC;
+  var inThis = function (fn) { return function () { var a = arguments; return inSec(sec, function () { return fn.apply(null, a); }); }; };
+  var rows = Array.isArray(data) ? data : [];
+  var file = DATA.files[meta.file] || {};
+  var metrics = file[meta.metrics_from] || {};
+  var keys = Object.keys(metrics);
+  var on = keys.slice(0, 2);                 // start in 2D: the dissertation's view
+  if (keys.indexOf('peak') >= 0 && keys.indexOf('rev') >= 0) on = ['peak', 'rev'];
+  var groups = Object.keys(meta.colour_map).sort();   // '0' then '1': commuter drawn on top
+  var ext = {};
+  keys.forEach(function (k) {
+    var v = rows.map(function (r) { return num(r[k]); });
+    var lo = Math.min.apply(null, v), hi = Math.max.apply(null, v), pad = (hi - lo) * 0.04;
+    ext[k] = { lo: lo, hi: hi, range: [lo - pad, hi + pad] };
+  });
+  var ranges = {};                           // slider selection per metric
+  keys.forEach(function (k) { ranges[k] = [ext[k].lo, ext[k].hi]; });
+  var jitter = rows.map(function (r, i) { var x = Math.sin(i * 12.9898) * 43758.5453; return (x - Math.floor(x) - 0.5) * 0.7; });
+  var selected = null;                       // Set of row indices, or null
+  var focus = null;
+
+  var card = el('div', 'card scatter-card');
+  container.appendChild(card);
+  var bar = el('div', 'sc-bar');
+  bar.appendChild(el('span', 'lg-title', 'Metrics'));
+  var chips = {};
+  keys.forEach(function (k) {
+    var b = el('button', 'chip', metrics[k].label);
+    b.type = 'button'; b.title = metrics[k].note || '';
+    b.addEventListener('click', function () {
+      var i = on.indexOf(k);
+      if (i >= 0) { if (on.length === 1) return; on.splice(i, 1); } else { on.push(k); on.sort(function (a, b2) { return keys.indexOf(a) - keys.indexOf(b2); }); }
+      draw(true);
+    });
+    chips[k] = b; bar.appendChild(b);
+  });
+  var clearBtn = el('button', 'chip ghost', 'Clear selection');
+  clearBtn.type = 'button';
+  clearBtn.addEventListener('click', bindSec(function () { resetRanges(); setPairs([]); }));
+  bar.appendChild(clearBtn);
+  card.appendChild(bar);
+  var plot = el('div', 'sc-plot');
+  plot.appendChild(el('div', 'card-empty', 'Loading the chart…'));
+  card.appendChild(plot);
+  var note = el('div', 'chart-note sc-note');
+  card.appendChild(note);
+  var sliders = el('div', 'sc-sliders');
+  card.appendChild(sliders);
+  card.appendChild(swatchLegend(groups.slice().reverse().map(function (g) {
+    return { label: (meta.colour_labels || {})[g] || g, colour: meta.colour_map[g], dot: true };
+  })));
+
+  function label(r) { return (meta.label_keys || []).map(function (k) { return r[k]; }).join(' ↔ '); }
+  function tip(r) {
+    var t = '<b>' + label(r) + '</b><br>' + ((meta.colour_labels || {})[String(r[meta.colour_key])] || '');
+    keys.forEach(function (k) { t += '<br>' + metrics[k].label + ': ' + fmtNum(r[k], 2); });
+    (meta.tip_keys || []).forEach(function (tk) { t += '<br>' + tk.label + ': ' + fmtNum(r[tk.key], tk.dp || 0); });
+    return t;
+  }
+  var tips = rows.map(tip);
+
+  function colourOf(i, g) {
+    var hex = meta.colour_map[g];
+    if (focus !== null && i === focus) return '#fdd522';
+    if (!selected) return hexAlpha(hex, 0.7);
+    return selected.has(i) ? hexAlpha(hex, 0.95) : hexAlpha(hex, 0.1);
+  }
+
+  function traces() {
+    var d3 = on.length === 3;
+    return groups.map(function (g) {
+      var idx = [];
+      rows.forEach(function (r, i) { if (String(r[meta.colour_key]) === g) idx.push(i); });
+      var tr = {
+        name: (meta.colour_labels || {})[g] || g,
+        type: d3 ? 'scatter3d' : 'scatter',
+        mode: 'markers',
+        customdata: idx,
+        text: idx.map(function (i) { return tips[i]; }),
+        hovertemplate: '%{text}<extra></extra>',
+        marker: {
+          color: idx.map(function (i) { return colourOf(i, g); }),
+          size: idx.map(function (i) { return i === focus ? (d3 ? 7 : 12) : (selected && selected.has(i) ? (d3 ? 4 : 8) : (d3 ? 3 : 6)); }),
+          line: { width: 0 }
+        }
+      };
+      if (on.length === 1) {
+        tr.x = idx.map(function (i) { return rows[i][on[0]]; });
+        tr.y = idx.map(function (i) { return +g + jitter[i]; });
+      } else {
+        tr.x = idx.map(function (i) { return rows[i][on[0]]; });
+        tr.y = idx.map(function (i) { return rows[i][on[1]]; });
+        if (d3) tr.z = idx.map(function (i) { return rows[i][on[2]]; });
+      }
+      return tr;
+    });
+  }
+
+  function axis(k) {
+    return { title: { text: metrics[k].label, font: { size: 11 } }, range: ext[k].range, zeroline: false, gridcolor: '#eceff3' };
+  }
+
+  function layout() {
+    var base = {
+      margin: { l: 56, r: 12, t: 8, b: 48 }, showlegend: false, hovermode: 'closest',
+      font: { family: "'Roboto', system-ui, sans-serif", size: 11, color: '#5e5e5e' },
+      paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+      uirevision: on.join('|'), dragmode: on.length === 3 ? 'turntable' : 'lasso'
+    };
+    if (on.length === 1) {
+      base.xaxis = axis(on[0]);
+      base.yaxis = { range: [-0.6, 1.6], tickvals: groups.map(Number), ticktext: groups.map(function (g) { return (meta.colour_labels || {})[g] || g; }), zeroline: false, fixedrange: true };
+    } else if (on.length === 2) {
+      base.xaxis = axis(on[0]); base.yaxis = axis(on[1]);
+    } else {
+      base.margin = { l: 0, r: 0, t: 0, b: 0 };
+      base.scene = { xaxis: axis(on[0]), yaxis: axis(on[1]), zaxis: axis(on[2]), aspectmode: 'cube',
+                     camera: { eye: { x: 1.6, y: -1.6, z: 0.9 } } };
+    }
+    return base;
+  }
+
+  function hint() {
+    note.textContent = on.length === 3
+      ? 'Drag to rotate, scroll to zoom. Click a point to pick one pair, or drag the sliders below to pick a region.'
+      : 'Click a point to pick one pair, or drag a lasso around a group (double-click to clear). Switch on a third metric for 3D.';
+    keys.forEach(function (k) { chips[k].classList.toggle('on', on.indexOf(k) >= 0); });
+  }
+
+  // Range sliders: two thumbs per active metric (3D only).
+  function drawSliders() {
+    clear(sliders);
+    sliders.hidden = on.length !== 3;
+    if (on.length !== 3) return;
+    on.forEach(function (k) {
+      var row = el('div', 'sc-range');
+      row.appendChild(el('span', 'sc-range-label', metrics[k].label));
+      var lo = el('input'), hi = el('input');
+      [lo, hi].forEach(function (inp, j) {
+        inp.type = 'range'; inp.min = ext[k].lo; inp.max = ext[k].hi; inp.step = (ext[k].hi - ext[k].lo) / 200;
+        inp.value = ranges[k][j];
+        inp.setAttribute('aria-label', metrics[k].label + (j ? ' maximum' : ' minimum'));
+      });
+      var out = el('span', 'sc-range-val');
+      var show = function () { out.textContent = fmtNum(ranges[k][0], 2) + ' to ' + fmtNum(ranges[k][1], 2); };
+      var onInput = bindSec(function () {
+        var a = +lo.value, b = +hi.value;
+        ranges[k] = [Math.min(a, b), Math.max(a, b)];
+        show();
+        applyRanges();
+      });
+      lo.addEventListener('input', onInput); hi.addEventListener('input', onInput);
+      var pair = el('div', 'sc-thumbs'); pair.appendChild(lo); pair.appendChild(hi);
+      row.appendChild(pair); row.appendChild(out); show();
+      sliders.appendChild(row);
+    });
+  }
+  function resetRanges() { keys.forEach(function (k) { ranges[k] = [ext[k].lo, ext[k].hi]; }); drawSliders(); }
+  function rangesActive() {
+    return on.some(function (k) { return ranges[k][0] > ext[k].lo + 1e-9 || ranges[k][1] < ext[k].hi - 1e-9; });
+  }
+  var rangeTimer = null;
+  function applyRanges() {
+    clearTimeout(rangeTimer);
+    rangeTimer = setTimeout(bindSec(function () {
+      if (!rangesActive()) { setPairs([]); return; }
+      setPairs(rows.filter(function (r) {
+        return on.every(function (k) { return r[k] >= ranges[k][0] && r[k] <= ranges[k][1]; });
+      }));
+    }), 120);
+  }
+
+  var ready = false;
+  // Plotly.react clears the lasso and fires its own deselect/selected events;
+  // those must not be read as the viewer changing the selection (that wiped
+  // every lasso selection straight after it was made).
+  var quiet = false;
+  function draw(newMode) {
+    hint();
+    if (newMode) { drawSliders(); }
+    if (!ready) return;
+    quiet = true;
+    Promise.resolve(Plotly.react(plot, traces(), layout(), { displaylogo: false, responsive: true,
+      modeBarButtonsToRemove: ['toImage', 'sendDataToCloud', 'resetCameraLastSave3d', 'hoverClosest3d', 'hoverClosestCartesian', 'hoverCompareCartesian', 'toggleSpikelines'] }))
+      .then(function () { setTimeout(function () { quiet = false; }, 0); });
+  }
+
+  function pickedRows(ev) {
+    var idx = {};
+    ((ev && ev.points) || []).forEach(function (p) {
+      var i = Array.isArray(p.customdata) ? p.customdata[0] : p.customdata;
+      if (i === undefined) i = p.data.customdata[p.pointNumber];
+      idx[i] = 1;
+    });
+    return Object.keys(idx).map(function (i) { return rows[+i]; });
+  }
+
+  loadPlotly().then(function () {
+    clear(plot);
+    ready = true;
+    draw(true);
+    plot.on('plotly_click', inThis(function (ev) {
+      if (quiet) return;
+      var picked = pickedRows({ points: (ev.points || []).slice(0, 1) });
+      if (!picked.length) return;
+      setPairs(picked);
+      focusPair(picked[0]);
+    }));
+    // Lasso / box: every point inside is selected and its route drawn.
+    plot.on('plotly_selected', inThis(function (ev) {
+      if (quiet || !ev || !ev.points || !ev.points.length) return;
+      setPairs(pickedRows(ev));
+    }));
+    // Double-click on empty plot clears (as Plotly's own reset does).
+    plot.on('plotly_doubleclick', inThis(function () { if (!quiet) setPairs([]); }));
+  }).catch(function (err) {
+    clear(plot);
+    plot.appendChild(el('div', 'card-empty', 'The scatter plot could not load (' + err.message + ').'));
+  });
+  hint(); drawSliders();
+
+  var byKey = {};
+  rows.forEach(function (r, i) { byKey[r.a + '|' + r.b] = i; });
+  return {
+    chart: null,
+    update: function () {},
+    highlight: function (sel, focusRow) {
+      selected = sel && sel.length ? new Set(sel.map(function (r) { return byKey[r.a + '|' + r.b]; })) : null;
+      focus = focusRow ? byKey[focusRow.a + '|' + focusRow.b] : null;
+      if (!sel || !sel.length) { if (rangesActive() && on.length === 3) { resetRanges(); } }
+      draw(false);
+    }
+  };
 };

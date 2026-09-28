@@ -56,11 +56,11 @@ function el(tag, cls, html) {
 function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
 // Card scaffold used by every renderer: title/subtitle + a body element.
-function makeCard(meta, state) {
+function makeCard(meta, state, data) {
   var card = el('div', 'card');
   var head = el('div', 'card-head');
-  head.appendChild(el('div', 'card-title', fmtTitle(meta.title || '', state)));
-  if (meta.subtitle) head.appendChild(el('div', 'card-sub', fmtTitle(meta.subtitle, state)));
+  head.appendChild(el('div', 'card-title', fmtTitle(meta.title || '', state, data)));
+  if (meta.subtitle) head.appendChild(el('div', 'card-sub', fmtTitle(meta.subtitle, state, data)));
   card.appendChild(head);
   var body = el('div', 'card-body');
   card.appendChild(body);

@@ -16,6 +16,7 @@ import time
 from build import census_oa as census_oa_mod
 from build import context as context_mod
 from build import infra as infra_mod
+from build import kmeans as kmeans_mod
 from build import manifest as manifest_mod
 from build import od as od_build
 from build import premises as premises_mod
@@ -57,13 +58,16 @@ def main(argv: list[str] | None = None) -> int:
     context_mod.write_census(names, oa)
     premises_mod.write_premises()
 
-    print("4/9  Corridors & commuter labels")
+    print("4/9  Corridors, commuter labels + k-means scatter")
     _, net, lookup = context_mod.write_context(od, names)
     pair_trips, pair_cat = context_mod.pair_categories(od, lookup)
+    km_pairs = kmeans_mod.write_kmeans(od)
 
     print("5/9  Routing every OD pair on the bike network")
     rs = routes_mod.build_routes(od, stations, sources.GRAPH_FILE, use_graph=not args.no_routes)
-    routes = routes_mod.write_routes(rs, od_build.all_top_pairs(summary), stations)
+    routes = routes_mod.write_routes(
+        rs, od_build.all_top_pairs(summary) | km_pairs, stations
+    )
     routes_mod.write_corridor_loads(rs, pair_trips, pair_cat)
 
     print("6/9  Infrastructure GeoJSON + timeline")
@@ -93,6 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         "segregated_share_pct": seg["all"]["share_pct"],
         "router": routes["router"],
         "routes": routes["n"],
+        "kmeans_pairs": len(km_pairs),
     }
     manifest_mod.write_manifest(stats)
     print(f"Done in {time.time() - t0:.1f}s -> {sources.WEB_DATA_DIR}")

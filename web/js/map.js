@@ -1,67 +1,118 @@
-// map.js — Leaflet map: station markers (sized dots, the census output-area
-// choropleth or 2.5D population columns), OD route lines, corridor flow map,
-// infrastructure layers, the premises heat layer and the legend (toggles +
-// controls).
-// Reads global state S (app.js) and DATA (data.js); exposes a small MAP api.
-// Everything the map draws is decided by the active view's `map`, `legend`
-// and `controls` config in the manifest, so a new overlay is a config entry.
+// map.js — one Leaflet map per page section: station markers (sized dots, the
+// census output-area choropleth or 2.5D population columns), OD route lines,
+// k-means pair routes, infrastructure layers, the premises heat layer and the
+// legend (toggles + controls).
+//
+// Every function works on the ACTIVE section (app.js inSec): MAP is that
+// section's map object and S reads its station/toggles. Handlers are wrapped
+// with bindSec so they run in the section that created them. What a map draws
+// is decided by the view's `map`, `legend` and `controls` config.
 
 'use strict';
 
-var MAP = {
-  map: null,
-  markers: {},        // station id -> L.circleMarker
-  lineLayer: null,    // selected station's route polylines
-  loadLayer: null,    // city-wide corridor flow map
-  infraLayer: null,   // cycle infrastructure (all / timeline / segregated)
-  bufferLayer: null,  // the selected station's census buffer circle
-  barLayer: null,     // residents vs workplace columns
-  heatLayer: null,    // licensed premises heat map
-  oaLayer: null,      // census output-area choropleth (built once, restyled)
-  infraFeatures: [],  // cached leaflet layers from infra.geojson
-  segFeatures: []     // cached leaflet layers from segregated.geojson
-};
+var MAP = null;         // the active section's map state (set by inSec)
 
 var DOT_RADIUS = 5;
 var SMALL_RADIUS = 3.5;
 var BAR_MAX_PX = 64;
 
-function initMap() {
-  MAP.map = L.map('map', { zoomControl: false, preferCanvas: true }).setView([55.86, -4.26], 12);
+function newMapState() {
+  return {
+    map: null,
+    markers: {},        // station id -> L.circleMarker
+    lineLayer: null,    // selected station's routes / selected k-means pairs
+    infraLayer: null,   // cycle infrastructure (timeline / segregated)
+    bufferLayer: null,  // the selected station's census buffer / ring
+    barLayer: null,     // residents vs workplace columns
+    heatLayer: null,    // licensed premises heat map
+    oaLayer: null,      // census output-area choropleth (built once, restyled)
+    infraFeatures: [],  // cached leaflet layers from infra.geojson
+    segFeatures: [],    // cached leaflet layers from segregated.geojson
+    segMax: { t: 1, c: 1 }
+  };
+}
+
+function initMap(container) {
+  SEC.m = MAP = newMapState();
+  var touch = L.Browser.mobile || L.Browser.touch && window.matchMedia('(pointer: coarse)').matches;
+  // Scroll-wheel zoom stays off until the map is clicked, and one-finger drag
+  // is off on phones, so scrolling the page never gets trapped by a map.
+  MAP.map = L.map(container, {
+    zoomControl: false, preferCanvas: true, zoomSnap: 0.25,
+    scrollWheelZoom: false, dragging: !touch, tap: false
+  }).setView([55.86, -4.26], 12);
   L.control.zoom({ position: 'topright' }).addTo(MAP.map);
-  L.control.scale({ position: 'bottomleft', imperial: false, maxWidth: 120 }).addTo(MAP.map);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · Infra: Glasgow City Council · Trips: nextbike Glasgow · Census 2022: NRS · Premises: Glasgow Licensing Board',
-    maxZoom: 19, opacity: 0.6
+  L.control.scale({ position: 'bottomleft', imperial: false, maxWidth: 160 }).addTo(MAP.map);
+  wireGestures(container, touch);
+  // Dark grey basemap (Esri Dark Gray Canvas, no API key) so the coloured
+  // layers carry the map. Place names sit in their own pane above the vectors.
+  var esri = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/';
+  L.tileLayer(esri + 'World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Basemap &copy; Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxNativeZoom: 16, maxZoom: 19
   }).addTo(MAP.map);
-  // Census output areas sit at the bottom, then the heat canvas, then every
-  // vector layer (overlayPane, 400).
+  MAP.map.createPane('labels');
+  MAP.map.getPane('labels').style.zIndex = 450;
+  MAP.map.getPane('labels').style.pointerEvents = 'none';
+  L.tileLayer(esri + 'World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+    pane: 'labels', maxNativeZoom: 16, maxZoom: 19
+  }).addTo(MAP.map);
+  container.style.background = DATA.manifest.colours.basemap.bg;
   MAP.map.createPane('oa');
   MAP.map.getPane('oa').style.zIndex = 340;
   MAP.map.createPane('heat');
   MAP.map.getPane('heat').style.zIndex = 350;
   MAP.infraLayer = L.layerGroup().addTo(MAP.map);
-  MAP.loadLayer = L.layerGroup().addTo(MAP.map);
   MAP.bufferLayer = L.layerGroup().addTo(MAP.map);
   MAP.lineLayer = L.layerGroup().addTo(MAP.map);
   MAP.barLayer = L.layerGroup().addTo(MAP.map);
+  var m = currentView().map;
   buildStationMarkers();
-  buildOALayer();
-  buildInfraLayer();
-  buildSegregatedLayer();
+  if (m.stations === 'buffers') buildOALayer();
+  if (m.infra === 'timeline' || m.infra === 'all') buildInfraLayer();
+  if (m.infra === 'segregated') buildSegregatedLayer();
   // Clicking empty map deselects; feature clicks stop propagation.
-  MAP.map.on('click', function () { if (S.station && canSelect()) selectStation(null); });
+  // (The corridor map keeps its pair selection: the same click also switches
+  // on wheel zoom, and clearing on it made the selection feel random.)
+  MAP.map.on('click', bindSec(function () {
+    if (canSelect() && S.station) selectStation(null);
+  }));
+}
+
+// Wheel zoom switches on with a click inside the map and off when the pointer
+// leaves; a wheel or one-finger drag while it is off shows a short hint.
+function wireGestures(container, touch) {
+  var map = MAP.map;
+  var hint = el('div', 'map-gesture-hint');
+  container.appendChild(hint);
+  var timer = null;
+  function flash(msg) {
+    hint.textContent = msg;
+    hint.classList.add('on');
+    clearTimeout(timer);
+    timer = setTimeout(function () { hint.classList.remove('on'); }, 1400);
+  }
+  map.on('click focus', function () { map.scrollWheelZoom.enable(); });
+  container.addEventListener('mouseleave', function () { map.scrollWheelZoom.disable(); });
+  container.addEventListener('wheel', function () {
+    if (!map.scrollWheelZoom.enabled()) flash('Click the map to zoom with the scroll wheel');
+  }, { passive: true });
+  if (touch) {
+    container.addEventListener('touchmove', function (e) {
+      if (e.touches.length === 1) flash('Use two fingers to move the map');
+    }, { passive: true });
+  }
 }
 
 function currentView() { return DATA.manifest.views[S.view]; }
 function canSelect() { return currentView().map.select !== false; }
-// Station marker mode for the active view; "$key" resolves to a state value.
+// Station marker mode; "$key" resolves to a state value.
 function stationMode() {
   var m = currentView().map.stations || 'dots';
   return m.charAt(0) === '$' ? (S[m.slice(1)] || 'dots') : m;
 }
 function clickSelect(id) {
-  return function (e) { L.DomEvent.stopPropagation(e); if (canSelect()) selectStation(id); };
+  return bindSec(function (e) { L.DomEvent.stopPropagation(e); if (canSelect()) selectStation(id); });
 }
 
 // ── Stations ──────────────────────────────────────────────────────────────────
@@ -69,12 +120,12 @@ function sizedRadius(trips) { return 4 + Math.sqrt(Math.max(trips, 0)) / 30; }
 function hourRadius(rate) { return 3 + 16 * Math.sqrt(Math.max(rate, 0) / DATA.hourlyMax); }
 
 function buildStationMarkers() {
-  var cols = DATA.manifest.colours.ui;
+  var bm = DATA.manifest.colours.basemap;
   stations().forEach(function (s) {
     var m = L.circleMarker([s.lat, s.lon], {
-      radius: DOT_RADIUS, color: '#fff', weight: 1.5, fillColor: cols.station, fillOpacity: 0.85
+      radius: DOT_RADIUS, color: bm.station_line, weight: 1.5, fillColor: bm.station, fillOpacity: 0.9
     });
-    m.bindTooltip(function () { return stationTip(s); }, { direction: 'top', offset: [0, -4] });
+    m.bindTooltip(bindSec(function () { return stationTip(s); }), { direction: 'top', offset: [0, -4] });
     m.on('click', clickSelect(s.id));
     m.station = s;
     m.addTo(MAP.map);
@@ -83,10 +134,14 @@ function buildStationMarkers() {
   fitStations();
 }
 
-// Frame the whole network (initial view, and any control asking for `fit: all`).
+// Frame the whole network (initial view; the population columns).
 function fitStations() {
   var b = L.latLngBounds(stations().map(function (s) { return [s.lat, s.lon]; }));
-  if (b.isValid()) MAP.map.fitBounds(b.pad(0.05));
+  if (!b.isValid()) return;
+  MAP.map.invalidateSize();
+  var tb = secEl('toolbar');
+  var left = tb ? Math.min(tb.offsetWidth * 0.6, MAP.map.getSize().x * 0.3) : 20;
+  MAP.map.fitBounds(b, { paddingTopLeft: [left, BAR_MAX_PX + 12], paddingBottomRight: [20, 20] });
 }
 
 function stationTip(s) {
@@ -101,19 +156,22 @@ function stationTip(s) {
   } else if (mode === 'bars') {
     var c = censusRow(s.id) || {};
     html += fmtNum(c.over16pop) + ' residents 16+ · ' + fmtNum(c.workplace_pop) + ' workplace · ' + S.buffer + ' m';
+  } else if (currentView().map.ring) {
+    var r = censusRow(s.id) || {};
+    html += fmtNum(r.n_on_premises) + ' licensed premises within ' + S.buffer + ' m';
   } else {
     html += fmtNum(s.trips) + ' trips · live from ' + fmtDate(s.first_trip);
   }
   return html + '</div>';
 }
 
-// Restyle markers for the current state: view mode (sized dots vs uniform vs
-// small dots over buffers/columns), standard-day hour, timeline visibility,
-// legend toggle, selection.
+// Restyle markers for the current state: view mode, standard-day hour,
+// timeline visibility, legend toggle, selection.
 function styleMarkers() {
   var cols = DATA.manifest.colours;
   var view = currentView();
   var mode = stationMode();
+  var bm = cols.basemap;
   var sized = mode === 'sized';
   var small = mode === 'buffers' || mode === 'bars';
   var byDate = view.map.timeline === 'dates';
@@ -122,7 +180,7 @@ function styleMarkers() {
     var m = MAP.markers[id], s = m.station;
     var selected = id === S.station;
     var live = (!byDate || s.first_trip <= S.date) && (S.show.stations || selected);
-    var radius = small ? SMALL_RADIUS : DOT_RADIUS, fill = cols.ui.station;
+    var radius = small ? SMALL_RADIUS : DOT_RADIUS, fill = bm.station;
     if (hourMode) {
       var h = hourlyFor(id, S.hour) || { out: 0, in: 0 };
       var t = h.out + h.in;
@@ -133,14 +191,14 @@ function styleMarkers() {
     }
     m.setStyle({
       fillColor: selected ? cols.ui.station_selected : fill,
-      color: selected ? cols.ui.ink : '#fff',
+      color: selected ? cols.ui.ink : bm.station_line,
       weight: selected ? 2 : (small ? 1 : 1.5),
-      fillOpacity: selected ? 1 : 0.85,
+      fillOpacity: selected ? 1 : 0.9,
       radius: selected ? radius + 3 : radius
     });
     if (live) { if (!m._map) m.addTo(MAP.map); m.bringToFront(); } else if (m._map) { m.remove(); }
   });
-  document.getElementById('map').classList.toggle('no-select', !canSelect());
+  MAP.map.getContainer().classList.toggle('no-select', !canSelect());
 }
 
 // ── Census output areas, buffers and population columns ───────────────────────
@@ -153,9 +211,8 @@ function rampColor(t) {
 }
 
 // Built once from oa.geojson (thousands of polygons) and restyled in place when
-// the variable changes; rebuilding it per control change would stall the map.
-// Polygons take no click handler, so a click passes through to the map's own
-// handler and deselects, like clicking anywhere else off a station.
+// the variable changes. Polygons take no click handler, so a click passes
+// through to the map and deselects, like clicking anywhere else off a station.
 function buildOALayer() {
   var fc = DATA.files['oa.geojson'];
   if (!fc || !fc.features.length) return;
@@ -163,13 +220,13 @@ function buildOALayer() {
     pane: 'oa',
     renderer: L.canvas({ pane: 'oa' }),
     interactive: true,
-    style: function () { return { weight: 0.4, color: '#ffffff', fillOpacity: 0.75 }; }
+    style: function () { return { weight: 0.4, color: DATA.manifest.colours.basemap.oa_line, fillOpacity: 0.8 }; }
   });
-  MAP.oaLayer.bindTooltip(function (layer) {
+  MAP.oaLayer.bindTooltip(bindSec(function (layer) {
     var meta = censusVarMeta(), v = layer.feature.properties[S.census_var];
     return '<b>' + meta.label + ': ' + (v === null || v === undefined ? 'n/a' : fmtNum(v, meta.dp, meta.unit)) +
       '</b><span style="color:#5e5e5e">output area ' + layer.feature.properties.code + '</span>';
-  }, { sticky: true, className: 'oa-tip' });
+  }), { sticky: true, className: 'oa-tip' });
 }
 
 function drawOA() {
@@ -190,13 +247,12 @@ function drawOverlays() {
   drawOA();
   if (mode === 'buffers') drawBuffers();
   else if (mode === 'bars') drawBars();
+  if (currentView().map.ring) drawRing();
 }
 
-// Over the output areas only the selected station gets a buffer: it shows how
-// big the buffer is against the areas beneath it, filled with the average the
-// station profile (and the regression) actually uses, on the same colour scale.
-// Without an output-area layer every station keeps its disc, so the map still
-// carries the variable.
+// Over the output areas only the selected station gets a buffer: a solid disc
+// on the same colour scale, filled with the average the regression uses.
+// Without an output-area layer every station keeps its disc.
 function drawBuffers() {
   var meta = censusVarMeta();
   var ink = DATA.manifest.colours.ui.ink;
@@ -205,15 +261,45 @@ function drawBuffers() {
     if (MAP.oaLayer ? !selected : (!S.show.stations && !selected)) return;
     var v = censusValue(s.id);
     var t = censusRamp(v);
+    var txt = meta.label + ': ' + (v === null ? 'n/a' : fmtNum(v, meta.dp, meta.unit));
+    if (selected) {
+      L.circle([s.lat, s.lon], { radius: +S.buffer, color: '#fff', weight: 6, opacity: 0.9, fill: false, interactive: false })
+        .addTo(MAP.bufferLayer);
+    }
     var circ = L.circle([s.lat, s.lon], {
-      radius: +S.buffer, color: selected ? ink : '#fff', weight: selected ? 2.5 : 0.8,
+      radius: +S.buffer, color: selected ? ink : '#fff', weight: selected ? 2 : 0.8,
       fillColor: t === null ? NO_VALUE_COLOUR : rampColor(t),
-      fillOpacity: selected && !MAP.oaLayer ? 0.8 : 0.55
+      fillOpacity: selected ? 0.95 : 0.55
     });
-    circ.bindTooltip('<b>' + s.id + '</b><br>' + meta.label + ': ' + (v === null ? 'n/a' : fmtNum(v, meta.dp, meta.unit)) +
-      '<br><span style="color:#5e5e5e">average over the ' + S.buffer + ' m buffer</span>', { sticky: true });
+    if (selected) {
+      circ.bindTooltip('<b>' + S.buffer + ' m buffer average</b>' + txt, {
+        permanent: true, direction: 'right', offset: [10, 0], className: 'buffer-label'
+      });
+    } else {
+      circ.bindTooltip('<b>' + s.id + '</b><br>' + txt +
+        '<br><span style="color:#5e5e5e">average over the ' + S.buffer + ' m buffer</span>', { sticky: true });
+    }
     circ.on('click', clickSelect(s.id));
     circ.addTo(MAP.bufferLayer);
+  });
+  placeBufferLabel();
+}
+
+// The selected station's buffer as an outline (premises heat map).
+function drawRing() {
+  var s = S.station ? stationById(S.station) : null;
+  if (!s) return;
+  L.circle([s.lat, s.lon], { radius: +S.buffer, color: '#fff', weight: 2.5, dashArray: '5 4', fill: false, interactive: false })
+    .addTo(MAP.bufferLayer);
+}
+
+// A permanent tooltip anchors at the circle's centre; move it to the east edge.
+function placeBufferLabel() {
+  MAP.bufferLayer.eachLayer(function (l) {
+    var tip = l.getTooltip && l.getTooltip();
+    if (!tip || !tip.options.permanent) return;
+    var c = l.getLatLng();
+    tip.setLatLng(L.latLng(c.lat, c.lng + l.getRadius() / (111320 * Math.cos(c.lat * Math.PI / 180))));
   });
 }
 
@@ -259,14 +345,15 @@ function drawHeat() {
   if (MAP.heatLayer._canvas) MAP.map.getPane('heat').appendChild(MAP.heatLayer._canvas);
 }
 
-// ── Selected-station route lines ──────────────────────────────────────────────
-// Each layer in view.map.lines has a `map_lines` spec; its rows are partner
-// stations and the polyline follows routes.json. The same code draws
-// outbound/inbound flows (station flows) and commuter-coloured corridors.
+// ── Route lines ───────────────────────────────────────────────────────────────
+// Selected station: each layer in view.map.lines has a `map_lines` spec; its
+// rows (cut to the layer's `head`, as the chart is) are partner stations and
+// the polyline follows routes.json.
 function drawLines() {
   MAP.lineLayer.clearLayers();
   var view = currentView();
-  if (!S.station || !view.map.lines.length) return;
+  if (view.map.pairs) { drawPairs(); return; }
+  if (!S.station || !(view.map.lines || []).length) return;
   var maxTrips = 1;
   var todo = [];
   view.map.lines.forEach(function (name) {
@@ -274,6 +361,7 @@ function drawLines() {
     var spec = meta.map_lines; if (!spec) return;
     if (spec.role !== 'both' && !S.show[spec.role]) return;
     var rows = layerData(meta, S) || [];
+    if (meta.head) rows = rows.slice(0, meta.head);
     rows.forEach(function (r) {
       if (spec.colour_key && S.show.corridor[r[spec.colour_key]] === false) return;
       var a = spec.role === 'destination' ? r.station : S.station;
@@ -293,8 +381,6 @@ function drawLines() {
     var arrow = t.spec.role === 'destination' ? partner + ' → ' + S.station : (t.spec.role === 'origin' ? S.station + ' → ' + partner : S.station + ' ↔ ' + partner);
     var tip = '<b>' + arrow + '</b><br>' + fmtNum(t.row.trips) + ' trips';
     if (t.row.share !== undefined) tip += ' (' + fmtNum(t.row.share, 1, '%') + ', ' + controlLabel('daytype', S).toLowerCase() + ')';
-    if (t.row.commuter) tip += ' · ' + t.row.commuter;
-    if (t.row.exp_any !== undefined) tip += '<br>' + fmtNum(t.row.exp_any, 0, '%') + ' of route on cycle infrastructure';
     line.bindTooltip(tip, { sticky: true });
     line.on('mouseover', function () { line.setStyle({ opacity: 1, weight: w + 2 }); });
     line.on('mouseout', function () { line.setStyle({ opacity: 0.8, weight: w }); });
@@ -303,32 +389,47 @@ function drawLines() {
   });
 }
 
-// ── City-wide corridor flow map (no station selected) ─────────────────────────
-var LOAD_KEYS = { commuter: 'c', 'non-commuter': 'n' };
-
-function drawLoads() {
-  MAP.loadLayer.clearLayers();
-  var view = currentView();
-  if (view.map.loads !== 'corridor' || S.station) return;
-  var fc = DATA.files['corridor_load.geojson'];
-  if (!fc || !fc.features.length) return;
-  var cols = DATA.manifest.colours.corridor;
-  // Draw non-commuter first so commuter sits on top.
-  ['non-commuter', 'commuter'].forEach(function (cat) {
-    if (!S.show.corridor[cat]) return;
-    var key = LOAD_KEYS[cat], max = fc.max[key] || 1;
-    L.geoJSON(fc, {
-      filter: function (f) { return f.properties[key] / max >= 0.02; },
-      style: function (f) {
-        var w = 0.5 + 9 * Math.sqrt(f.properties[key] / max);
-        return { color: cols[cat], weight: w, opacity: 0.7, lineCap: 'round' };
-      },
-      onEachFeature: function (f, layer) {
-        layer.bindTooltip('<b>' + cat + ' corridors</b><br>' + fmtNum(f.properties[key]) + ' trips on this street<br>' +
-          '<span style="color:#5e5e5e">both categories: ' + fmtNum(f.properties.c + f.properties.n) + '</span>', { sticky: true });
-      }
-    }).addTo(MAP.loadLayer);
+// k-means pairs: with nothing selected every clustered pair is drawn faintly
+// (legend toggles by cluster); a selection is drawn bold, width = trips, and
+// a focused pair (a table row) is drawn on top in gold.
+function drawPairs() {
+  var cols = DATA.manifest.colours;
+  var sel = S.pairs || [];
+  var rows = sel.length ? sel : scatterRows();
+  var faint = !sel.length;
+  var maxT = rows.reduce(function (m, r) { return Math.max(m, r.trips || 0); }, 1);
+  var catOf = function (r) { return r.c ? 'commuter' : 'non-commuter'; };
+  // Non-commuter first so commuter corridors sit on top.
+  rows.slice().sort(function (a, b) { return a.c - b.c || a.trips - b.trips; }).forEach(function (r) {
+    if (!S.show.corridor[catOf(r)]) return;
+    var path = routeFor(r.a, r.b);
+    if (!path) return;
+    var w = faint ? 0.6 + 3 * Math.sqrt(r.trips / maxT) : 1.5 + 6 * Math.sqrt(r.trips / maxT);
+    var line = L.polyline(path, {
+      color: cols.corridor[catOf(r)], weight: w, opacity: faint ? 0.45 : 0.85, lineCap: 'round', lineJoin: 'round'
+    });
+    line.bindTooltip('<b>' + r.a + ' ↔ ' + r.b + '</b><br>' + fmtNum(r.trips) + ' trips · ' + catOf(r) +
+      '<br><span style="color:#5e5e5e">peak ' + fmtNum(r.peak, 2) + ' · wkday:wkend ' + fmtNum(r.wk, 2) + ' · reversal ' + fmtNum(r.rev, 2) + '</span>', { sticky: true });
+    line.on('click', bindSec(function (e) { L.DomEvent.stopPropagation(e); focusPair(r); }));
+    line.addTo(MAP.lineLayer);
   });
+  var f = S.focusPair;
+  if (f && routeFor(f.a, f.b)) {
+    L.polyline(routeFor(f.a, f.b), { color: '#1a1a1a', weight: 10, opacity: 0.6, interactive: false }).addTo(MAP.lineLayer);
+    L.polyline(routeFor(f.a, f.b), { color: cols.ui.station_selected, weight: 5, opacity: 1, interactive: false }).addTo(MAP.lineLayer);
+  }
+}
+
+// Zoom to the selected pairs (or one focused pair).
+function fitPairs(row) {
+  var rows = row ? [row] : (S.pairs || []);
+  if (!rows.length || !MAP) return;
+  var b = L.latLngBounds([]);
+  rows.forEach(function (r) {
+    var p = routeFor(r.a, r.b);
+    if (p) b.extend(L.polyline(p).getBounds());
+  });
+  if (b.isValid()) MAP.map.fitBounds(b.pad(0.12), { maxZoom: 15, animate: true });
 }
 
 // ── Infrastructure ────────────────────────────────────────────────────────────
@@ -367,7 +468,7 @@ function buildSegregatedLayer() {
 function drawInfra() {
   var mode = currentView().map.infra;
   MAP.infraLayer.clearLayers();
-  if (mode === 'none') return;
+  if (!mode || mode === 'none') return;
   if (mode === 'segregated') { drawSegregated(); return; }
   var faint = mode === 'all';
   MAP.infraFeatures.forEach(function (f) {
@@ -399,7 +500,7 @@ function legendItem(html, on, onClick, radio) {
   // Toggles strike through when off; radio options just lose the highlight.
   var b = el('button', 'lg' + (radio ? ' radio' + (on ? ' on' : '') : (on ? '' : ' off')), html);
   b.type = 'button';
-  b.addEventListener('click', onClick);
+  b.addEventListener('click', bindSec(onClick));
   return b;
 }
 
@@ -433,7 +534,7 @@ function controlGroup(name) {
 }
 
 function drawLegend() {
-  var box = document.getElementById('map-legend');
+  var box = secEl('legend');
   clear(box);
   var view = currentView();
   var cols = DATA.manifest.colours;
@@ -456,12 +557,12 @@ function drawLegend() {
           function () { S.show.infra[t] = !S.show.infra[t]; drawInfra(); drawLegend(); }));
       });
     } else if (group === 'corridor') {
-      g.appendChild(el('span', 'lg-title', 'Corridors'));
+      g.appendChild(el('span', 'lg-title', 'Pairs'));
       Object.keys(cols.corridor).forEach(function (c) {
         g.appendChild(legendItem('<i style="background:' + cols.corridor[c] + '"></i>' + c, S.show.corridor[c],
-          function () { S.show.corridor[c] = !S.show.corridor[c]; drawLoads(); drawLines(); drawLegend(); }));
+          function () { S.show.corridor[c] = !S.show.corridor[c]; drawLines(); drawLegend(); }));
       });
-      if (!S.station) g.appendChild(el('span', 'lg-note', 'line width = trips on that street'));
+      g.appendChild(el('span', 'lg-note', S.pairs && S.pairs.length ? fmtNum(S.pairs.length) + ' selected · width = trips' : 'all clustered pairs · width = trips'));
     } else if (group === 'scale') {
       if (stationMode() === 'buffers') {
         var sc = censusScale(), meta = censusVarMeta();
@@ -470,11 +571,17 @@ function drawLegend() {
         var ramp = el('span', 'lg-ramp');
         ramp.style.background = 'linear-gradient(90deg,' + cols.scale.low + ',' + cols.scale.mid + ',' + cols.scale.high + ')';
         g.appendChild(el('span', 'lg-note', fmtNum(sc.lo, meta.dp, meta.unit)));
+        var tv = S.station ? censusRamp(censusValue(S.station)) : null;
+        if (tv !== null) {
+          var tick = el('b', 'lg-tick');
+          tick.style.left = (Math.max(0, Math.min(1, tv)) * 100) + '%';
+          tick.title = S.station + ': ' + fmtNum(censusValue(S.station), meta.dp, meta.unit);
+          ramp.appendChild(tick);
+        }
         g.appendChild(ramp);
         g.appendChild(el('span', 'lg-note', fmtNum(sc.hi, meta.dp, meta.unit)));
-        var note = meta.desc ? meta.desc + '. ' : '';
-        note += 'Colour range = 5th to 95th percentile' + (MAP.oaLayer ? ' across output areas' : '') + '.';
-        if (S.station) note += ' The ring is the ' + S.buffer + ' m buffer, filled with its average.';
+        var note = 'Colour range = 5th to 95th percentile' + (MAP.oaLayer ? ' across output areas' : '') + '.';
+        if (S.station) note += ' The disc is the ' + S.buffer + ' m buffer, filled with its average (tick on the scale).';
         g.appendChild(el('span', 'lg-note lg-wide', note));
       } else if (stationMode() === 'bars') {
         g.appendChild(el('span', 'lg-title', 'Columns'));
@@ -498,19 +605,20 @@ function drawLegend() {
       }
     } else if (group === 'stations') {
       var mode = stationMode();
-      g.appendChild(legendItem('<i class="dot" style="background:' + cols.ui.station + '"></i>stations' + (mode === 'sized' ? ' (size = trips)' : ''), S.show.stations,
+      g.appendChild(legendItem('<i class="dot" style="background:' + cols.basemap.station + '"></i>stations' + (mode === 'sized' ? ' (size = trips)' : ''), S.show.stations,
         function () { S.show.stations = !S.show.stations; styleMarkers(); drawOverlays(); drawLegend(); }));
     }
     if (g.childNodes.length) box.appendChild(g);
   });
 }
 
-// Zoom to the selected station and whatever was drawn for it — its routes, or
-// its census buffer, so the buffer's size on the ground is readable (falls back
-// to the marker).
+// Zoom to the selected station and whatever was drawn for it — its routes,
+// or its census buffer (falls back to the marker).
 function focusStation(id) {
   var m = MAP.markers[id];
   if (!m) return;
+  // The columns only read city-wide: highlight the station, keep the frame.
+  if (stationMode() === 'bars') return;
   var b = L.latLngBounds([m.getLatLng()]);
   MAP.lineLayer.eachLayer(function (l) { b.extend(l.getBounds()); });
   MAP.bufferLayer.eachLayer(function (l) { b.extend(l.getBounds()); });
@@ -518,9 +626,9 @@ function focusStation(id) {
 }
 
 function updateMap() {
+  if (!MAP) return;
   drawHeat();
   drawInfra();
-  drawLoads();
   drawOverlays();
   drawLines();
   styleMarkers();

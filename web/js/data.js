@@ -12,7 +12,7 @@ var DATA = {
 };
 
 // Map layers that are not manifest layers but the map always needs.
-var MAP_FILES = ['stations.json', 'routes.json', 'infra.geojson', 'corridor_load.geojson', 'segregated.geojson',
+var MAP_FILES = ['stations.json', 'routes.json', 'infra.geojson', 'segregated.geojson', 'infra_timeline.json',
                  'premises.json', 'census_by_station.json', 'census_summary.json', 'system_profile.json'];
 // Files the map uses when they exist. The output-area choropleth needs census
 // boundaries the build can only reach on the author's machine, so a build
@@ -109,7 +109,8 @@ function controlOptions(ctrl) {
   if (ctrl.options) return ctrl.options.map(function (o) { return { value: String(o.value), label: o.label, colour: o.colour, fit: o.fit }; });
   if (ctrl.options_from) {
     var src = (DATA.files[ctrl.options_from.file] || {})[ctrl.options_from.field] || {};
-    return Object.keys(src).map(function (k) { return { value: k, label: src[k].label || k, title: src[k].desc }; });
+    var skip = ctrl.exclude || [];
+    return Object.keys(src).filter(function (k) { return skip.indexOf(k) < 0; }).map(function (k) { return { value: k, label: src[k].label || k, title: src[k].desc }; });
   }
   return [];
 }
@@ -126,12 +127,17 @@ function controlLabel(stateKey, state) {
   var o = controlOptions(ctrl).find(function (x) { return x.value === cur; });
   return o ? o.label : cur;
 }
-// "{daytype}" style placeholders in titles -> the active control label.
-function fmtTitle(str, state) {
+// "{daytype}" style placeholders in titles -> the active control label; any
+// other {key} is read from the layer's data object (not a row list), if given.
+function fmtTitle(str, state, data) {
   if (!str || !state) return str || '';
+  var obj = data && typeof data === 'object' && !Array.isArray(data) ? data : null;
   return String(str).replace(/\{(\w+)\}/g, function (m, k) {
     var lab = controlLabel(k, state);
-    return lab || m;
+    if (lab) return lab;
+    var v = obj ? obj[k] : undefined;
+    if (v === undefined || v === null) return m;
+    return typeof v === 'number' ? fmtNum(v, Number.isInteger(v) ? 0 : 1) : String(v);
   });
 }
 

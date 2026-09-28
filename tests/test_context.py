@@ -174,6 +174,36 @@ def test_uplift_movers_signs_and_orders(balance_vars: pd.DataFrame) -> None:
     assert context.uplift_movers(t, 150, 500, n=1) == rows[:1]
 
 
+def test_uplift_outperformers_beat_the_pooled_benchmark() -> None:
+    bal = pd.DataFrame(
+        {
+            "station_id": ["A", "B", "C", "D"], "buffer_m": [250] * 4,
+            "over16pop": [100, 100, 200, 0], "workplace_pop": [1000, 150, 100, 50],
+        }
+    )
+    empty = pd.DataFrame(columns=["station_id", "buffer_m", "n_on_premises", "total_capacity_on"])
+    t = context.census_table(bal, empty, ["A", "B", "C", "D"], buffers=(250,))
+    out = context.uplift_outperformers(t, 250)
+    # Pooled: 1300 workers / 400 residents - 1 = +225 %; only A (+900 %) beats it.
+    assert out["benchmark_pct"] == pytest.approx(225.0)
+    assert [r["station"] for r in out["rows"]] == ["A"]
+    assert out["rows"][0]["ratio"] == pytest.approx(10.0)
+    assert out["rows"][0]["vs_benchmark_pp"] == pytest.approx(675.0)
+    # D has no residents, so no uplift of its own; it is not counted in n.
+    assert out["n_above"] == 1 and out["n"] == 3
+
+
+def test_station_uplift_pairs_station_with_network(balance_vars: pd.DataFrame) -> None:
+    empty = pd.DataFrame(columns=["station_id", "buffer_m", "n_on_premises", "total_capacity_on"])
+    t = context.census_table(balance_vars, empty, ["A", "C"], buffers=(150, 500))
+    by = context.station_uplift(t, buffers=(150, 500))
+    assert [r["buffer"] for r in by["A"]] == [150, 500]
+    assert by["A"][0]["station_pct"] == pytest.approx(200.0)
+    assert by["A"][0]["network_pct"] == pytest.approx(250.0)
+    assert by["C"][0]["station_pct"] is None           # no residents at 150 m
+    assert by["C"][1]["station_pct"] == pytest.approx(0.0)
+
+
 def test_network_summary(od: pd.DataFrame, panel: pd.DataFrame, labels: pd.DataFrame) -> None:
     s = context.network_summary(od, context.pair_exposure(panel), context.commuter_lookup(labels))
     assert s["trips"] == 130 and s["pairs"] == 4

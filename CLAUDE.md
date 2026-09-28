@@ -131,7 +131,8 @@ If a view ever needs something only the raw trips can provide (e.g. the hourly 6
 **JavaScript (frontend):**
 - Vanilla JS. No React, no build step for the JS — plain `.js` files loaded in
   `index.html`. Match the v4git style (small focused files, generic renderers).
-- Libraries via CDN in `index.html`: **Leaflet** (maps) and **Chart.js** (charts).
+- Libraries via CDN in `index.html`: **Leaflet** (maps) and **Chart.js** (charts);
+  **Plotly** only for the k-means scatter, loaded on demand.
   These are the same tools v4git uses.
 - Keep global mutable state in one place (v4git uses a single `S = {…}` object;
   do the same). Renderers read state; they don't own navigation.
@@ -226,60 +227,50 @@ Frontend libraries (Leaflet, Chart.js) load via CDN — not pip.
   not "Added...".
 - Tag milestones: `v0.1-map-od`, `v0.2-origin-dest-split`, `v1.0-phase1-live`.
 - The `main` branch is what GitHub Pages deploys — keep it working.
-### The five pages (story order, Sep 2026 revision)
+### One scrolling page (Sep 2026 revision)
 
-The tabs follow the dissertation's argument. Each is a `views` entry in
-`config/layers.yaml`; the numbers below are the `phase` badge shown in the tab.
+The site is a single page for the LinkedIn post: an intro (`page.intro` +
+headline numbers in `layers.yaml`), then one section per `views` entry in
+scroll order, each rendered as heading -> `text` layers -> map + side panel
+(`layers`) -> optional full-width chart grid (`wide`; `wide_first` puts it
+above the map). All section text is marked [DRAFT] until rewritten.
 
-1. **Station flows** — all-days / weekday / weekend top lists, hourly split
-   and a weekday-vs-weekend dumbbell per station; network-wide profiles and
-   the station-share shift when nothing is selected. Day type is a `daytype`
-   control; the standard-day player sizes markers by trips *per day* so the
-   day types compare. Build: `build/od.py` streams the trip file once
-   (`TripAggregates`) and writes `od_by_station.json` (nested
-   `all|weekday|weekend` blocks + `compare`) and `system_profile.json`.
-2. **Neighbourhoods** — output-area choropleth (`oa.geojson`, the output areas
-   within 500 m of a station; `census_var` + `buffer` controls, colour range
-   5th–95th percentile **across output areas**). Selecting a station adds its
-   buffer circle on that same scale — the average is what the regression uses.
-   Plus a licensed-premises heat layer (Leaflet.heat, `premises.json` from the
-   licensing-board points), 2.5D residents-vs-workplace columns
-   (`nbhd_mode: bars`, CSS `divIcon`s) and the workplace-uplift panels.
-   Buffers are 150/250/500 m. Build: `build/census_oa.py` (+
-   `analysis/census_oa.py`, ported from `CensusFix_2.ipynb`),
-   `build/context.write_census` (`census_by_station.json`,
-   `census_summary.json`), `build/premises.py`.
-3. **Cycle infrastructure** — the date slider, unchanged; `map.select: false`.
-4. **Commuter corridors** — flow map + per-station corridors. Unlabelled
-   pairs are **merged into non-commuter** (matches the regression's
-   `is_commuter.fillna(0)`); the neighbourhood profile moved to page 2.
-5. **Regression** — `analysis/regression.py` holds the fitted coefficients
-   (ported from `RegressionRun.ipynb`, like the infra dates); `build/
-   regression.py` writes `regression.json` (forest rows, IRR curve, model
-   ladder). The map is the segregated-usage layer with the `segmode` control.
-
-Routing (`build/routes.py`, `RouteSet`), segment usage (`analysis/loads.py`,
-`build/segregated.py`) and the corridor flow map are unchanged.
+1. **Station flows** (`flows`) — sized stations, top 5 destinations/origins
+   (`head: 5`; the map draws the same five), day-type control, standard-day
+   player that returns to the all-day view when it finishes.
+2. **Neighbourhoods** (`group: neighbourhoods`, three sections):
+   2a `census` (output-area choropleth + buffer; `{note}` shows the
+   dissertation's description of the chosen variable from `page.notes`),
+   2b `balance` (residents vs workplace columns + uplift panels),
+   2c `premises` (heat map; `fixed: {census_var: n_on_premises}`).
+3. **Cycle infrastructure** (`timeline`) — unchanged.
+4. **Commuter corridors** (`corridors`, `layout: scatter`) — the k-means
+   scatter (`kmeans.json`, built by `build/kmeans.py` from
+   `precovidcommuter_labels.csv`, the file the regression used: 383 of 1,385
+   pairs). Three metrics only (peak share, log weekday:weekend ratio,
+   reversal; midday share was a diagnostic, never clustered on). 1 metric =
+   strip, 2 = 2D with lasso, 3 = 3D with click + range sliders (Plotly has no
+   3D lasso). Selected pairs go to `S.pairs`, are drawn on the map
+   (`map.pairs`) and listed by the `table` renderer. `routes.json` includes
+   every clustered pair. Stations are not selectable here (`select: false`);
+   the map shows pairs only. Plotly's own events during `Plotly.react` are
+   ignored (`quiet`), or a redraw wipes the lasso selection.
+5. **Regression** (`regression`) — charts first, then the segregated-usage map.
 
 ### Frontend conventions
 
-- Corridor labels are **commuter / non-commuter**. Never "leisure" (the
-  dissertation does not classify leisure use) and no longer "unclassified".
-- The map legend is the single place for toggles *and* controls. A control
-  is a `controls:` entry (state key, radio|select widget, options or
-  `options_from` a metadata object, `hash` key); views list the controls
-  they use. `setControl()` in app.js is the only state transition for them.
-- Generic renderers only: `bar` (also intervals/dumbbells via
-  `intervals`/`dumbbell`, `ref_line`, `tip_keys`, `head`/`tail`), `line`
-  (`x_type: number`, `ref_line`), `kpi` (`items_from`), `text` (narrative
-  with `{placeholders}`). Titles accept `{daytype}`-style placeholders.
-- Layer visibility: `show_if: {station: false, nbhd_mode: buffers}`; data
-  lookup: `path: [rank, $census_var, $buffer, top]` or
-  `field_from_state` + dotted `field`.
-- `map.stations` may be a `"$state_key"` reference (neighbourhood modes).
-  `map.select: false` hides the picker, ignores marker clicks and clears any
-  selection on entering the view: a station is selectable only where
-  selecting it does something.
-- Stations are uniform dots except in Station flows (size = trips). The
-  slider bar is generic: `dates` or `hours`.
-- Clicking empty map deselects the station; global-scope layers still render.
+- Each section has its own Leaflet map, timeline and selected station. Code
+  runs "in" a section: `inSec(sec, fn)` sets `SEC` and `MAP`; `S` is a Proxy
+  that reads `station`, `show`, `pairs`, `focusPair` and `fixed` overrides
+  from `SEC`. Handlers are wrapped with `bindSec` so they run in their own
+  section. Elements are found with `secEl(name)` (`data-el`), never by id.
+- Controls are page-wide: `setControl()` refreshes every built section that
+  lists a control on the same state key.
+- Sections build their maps lazily (IntersectionObserver). Wheel zoom is off
+  until the map is clicked; one-finger drag is off on phones (two fingers
+  pan), so maps never trap page scrolling.
+- Libraries: Leaflet + Leaflet.heat (cdnjs), Chart.js (jsdelivr), and Plotly
+  (plotly.js-gl3d-dist-min, jsdelivr) loaded on demand for the scatter only.
+- Generic renderers: `bar`, `line`, `kpi`, `text`, `scatter`, `table`.
+- Corridor labels are **commuter / non-commuter**. Never "leisure".
+- Basemap is Esri Dark Gray Canvas. `web/img/og.png` is the link-preview image.

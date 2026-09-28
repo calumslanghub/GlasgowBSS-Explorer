@@ -24,6 +24,7 @@ REQUIRED = [
     "census_summary.json",
     "premises.json",
     "regression.json",
+    "kmeans.json",
 ]
 # oa.geojson is optional: it needs census boundaries the build reads in place.
 DAYTYPES = ("all", "weekday", "weekend")
@@ -136,15 +137,32 @@ def test_manifest_layers_reference_existing_files_and_fields() -> None:
     for name, layer in m["layers"].items():
         if "file" in layer:
             assert (WEB_DATA / layer["file"]).exists(), name
-        assert layer["render"] in {"bar", "line", "kpi", "text"}, name
+        assert layer["render"] in {"bar", "line", "kpi", "text", "scatter", "table"}, name
         for k, v in layer.items():
             assert not (isinstance(v, str) and v.startswith("$")), f"{name}.{k} unresolved"
     for vname, view in m["views"].items():
-        for lname in view["layers"] + view["map"]["lines"]:
+        names = view["layers"] + view["map"].get("lines", []) + view.get("text", []) + view.get("wide", [])
+        names += [view["scatter"]] if view.get("scatter") else []
+        for lname in names:
             assert lname in m["layers"], f"{vname} -> {lname}"
         for cname in view.get("controls", []):
             assert cname in m["controls"], f"{vname} -> control {cname}"
-    assert [v["phase"] for v in m["views"].values()] == [1, 2, 3, 4, 5]
+    # One scrolling page, in the dissertation's order.
+    assert list(m["views"]) == ["flows", "census", "balance", "premises", "timeline", "corridors", "regression"]
+    assert m["page"]["intro"] and m["page"]["notes"]
+
+
+def test_kmeans_scatter() -> None:
+    km = load("kmeans.json")
+    assert set(km["metrics"]) == {"peak", "wk", "rev"}     # midday_share was not clustered on
+    rows = km["rows"]
+    assert len(rows) == km["clusters"]["commuter"]["n"] + km["clusters"]["non-commuter"]["n"]
+    assert km["clusters"]["commuter"]["n"] == 383           # the labels the regression used
+    routes = load("routes.json")["pairs"]
+    for r in rows:
+        assert r["a"] < r["b"] and r["c"] in (0, 1)
+        assert 0 <= r["peak"] <= 1 and 0 <= r["rev"] <= 2
+        assert f"{r['a']}|{r['b']}" in routes or f"{r['b']}|{r['a']}" in routes
 
 
 def test_system_profile_and_census() -> None:
@@ -189,6 +207,15 @@ def test_workplace_uplift() -> None:
     for r in movers:
         assert r["change_pp"] == pytest.approx(r["hi_pct"] - r["lo_pct"], abs=0.11)
         assert r["dir"] == ("more job-rich" if r["change_pp"] >= 0 else "more residential")
+    agg = {str(r["buffer"]): r["aggregate_pct"] for r in up["by_buffer"]}
+    for b, block in up["outperform"].items():
+        assert block["benchmark_pct"] == pytest.approx(agg[b])
+        assert 0 < len(block["rows"]) <= min(15, block["n_above"])
+        assert all(r["uplift_pct"] > block["benchmark_pct"] for r in block["rows"])
+    stations = {s["id"] for s in load("stations.json")}
+    assert set(up["by_station"]) <= stations
+    for rows in up["by_station"].values():
+        assert [r["network_pct"] for r in rows] == [agg[str(r["buffer"])] for r in rows]
 
 
 @pytest.mark.skipif(not (WEB_DATA / "oa.geojson").exists(), reason="built without --no-oa only")

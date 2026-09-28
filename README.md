@@ -9,17 +9,15 @@ Link to dashboard: https://calumslanghub.github.io/GlasgowBSS-Explorer/
 
 ## What it shows
 
-The five pages follow the dissertation: Data exploration of how the nextbike system is used,
-creation of variables based on surrounding area of each station, when infrastructure was built,
-what station pairs were identified commuter corridors, and the findings of the regression model.
+One scrolling page that follows the dissertation:
 
-| Page | Content |
+| Section | Content |
 |---|---|
-| 1 Station flows | With nothing selected: the network's weekday and weekend hourly profiles and which stations shift between weekday hubs and weekend hotspots. Click a station: top 10 destinations and origins (switchable between all days, weekdays and weekends), a weekday-vs-weekend dumbbell chart of the same partners, routes drawn along the shortest bike-network path (OSMnx), and the origin-vs-destination split by hour (06:00 to 23:00). Press play for a *standard day* (per day type): markers grow with that hour's trips per day and shade from red (mostly ending there) to blue (mostly starting there). |
-| 2 Neighbourhoods | The station-buffer covariates (Census 2022 output areas within 150, 250 or 500 m; licensed premises within the buffer). Pick a variable to colour the 2,551 output areas the stations can reach, and click a station to see its buffer drawn on the same colour scale, filled with the average the regression uses. Toggle a heat map of on-sales licensed premises, or switch to residents-vs-workplace columns and how that gap narrows as the buffer widens. |
-| 3 Cycle infrastructure | A date slider (with play) that reveals cycle infrastructure as it opened, and docking stations as they recorded their first trip. Chart of km open by type. Stations are not selectable here. |
-| 4 Commuter corridors | City-wide flow map: every station pair routed on the bike network, with street width = trips on that street, toggled by commuter / non-commuter label (unlabelled pairs count as non-commuter, as in the regression). Click a station for its busiest corridors and their route exposure to cycle infrastructure. |
-| 5 Regression | The negative-binomial gravity model: headline trip-rate ratios, the predicted effect of segregated exposure for commuter vs other pairs, a coefficient plot with naive and two-way clustered intervals, and the model ladder. The map shows segregated segments with width = trips whose route followed them, switchable to commuter-corridor trips only. |
+| 1 Station flows | Stations sized by trips. Click one for its top 5 destinations and origins (all days, weekdays or weekends), weekday-vs-weekend dumbbells, routes along the shortest bike-network path and the hourly origin/destination split. Press play for a standard day. |
+| 2 Neighbourhoods | 2a census variables on the output areas (with the station buffer the regression averaged), 2b residents vs workplace population, 2c a heat map of on-sales licensed premises. |
+| 3 Cycle infrastructure | A date slider that reveals infrastructure as it opened, and stations as they recorded their first trip. |
+| 4 Commuter corridors | The k-means clustering: switch between one, two or three of its metrics (strip, 2D or 3D plot), pick pairs by clicking, lassoing or range sliders, and see their routes on the map and listed below. |
+| 5 Regression | The negative-binomial gravity model's headline rate ratios, IRR curve, coefficient plot and model ladder, then a map of how many trips followed each segregated segment. |
 
 ## How it is built
 

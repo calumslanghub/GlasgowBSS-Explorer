@@ -5,11 +5,8 @@
    "scope": "global",
    "field": "kpi",
    "render": "text",
-   "show_if": {
-    "station": false
-   },
    "title": "How Glasgow used its bike share",
-   "body": "{summary.trips} trips between {summary.stations} nextbike stations, Sep 2017 to Apr 2024. Weekdays carry about {weekday_per_day} trips a day with a double commuting peak; weekend days carry {weekend_per_day}, spread across the afternoon. Click a station to see where its riders come from and go to, and switch between weekdays and weekends to watch the pattern change. Press play under the map for a standard day."
+   "body": "[DRAFT] {summary.trips} trips between {summary.stations} nextbike stations, September 2017 to April 2024. Weekdays carry about {weekday_per_day} trips a day with a morning and an evening commuting peak; weekend days carry {weekend_per_day}, spread across the afternoon. Station size shows how many trips start or end there. Click a station to see its top five destinations and origins, and use the Days switch to compare weekdays with weekends. Press play under the map to watch a standard day hour by hour."
   },
   "system_kpi": {
    "file": "system_profile.json",
@@ -155,7 +152,8 @@
    "field": "top_dest",
    "render": "bar",
    "orientation": "horizontal",
-   "title": "Top 10 destinations, {daytype}",
+   "title": "Top 5 destinations, {daytype}",
+   "head": 5,
    "subtitle": "Where trips starting here go",
    "label_key": "station",
    "value_key": "trips",
@@ -173,7 +171,8 @@
    "field": "top_orig",
    "render": "bar",
    "orientation": "horizontal",
-   "title": "Top 10 origins, {daytype}",
+   "title": "Top 5 origins, {daytype}",
+   "head": 5,
    "subtitle": "Where trips ending here started",
    "label_key": "station",
    "value_key": "trips",
@@ -282,14 +281,24 @@
    ],
    "y_label": "% of trips"
   },
-  "nbhd_intro": {
+  "census_intro": {
    "scope": "global",
    "render": "text",
-   "show_if": {
-    "station": false
-   },
-   "title": "Who lives and works around each station",
-   "body": "The dissertation described every station by the Census 2022 output areas within 150 to 500 m of it (age, students, cars, health, socio-economic class, commuting distance) plus the pubs, bars and restaurants licensed nearby. These are the controls in the regression on the last page. The map colours the output areas themselves; click a station to see its buffer, and the average the regression actually used. Or switch to the residents-versus-workplace view to see which stations sit in job-rich and which in residential areas."
+   "note_state": "census_var",
+   "title": "",
+   "body": "Every station was described by the Census 2022 output areas within or touching a buffer around it, the study used a 250m buffer; (150m and 500m are shown for comparison). These are control variables in the regression model. The map colours the output areas themselves; click a station to draw its buffer, filled with the average of the buffer size selected. <br><br><b>{census_var}:</b> {note}"
+  },
+  "balance_intro": {
+   "scope": "global",
+   "render": "text",
+   "title": "",
+   "body": "The gravity model used three mass terms: residents aged 16+ at both ends of a trip and workplace population at the destination. {note_over16pop} {note_workplace_pop} The map displays a comparison between the population totals within the buffer zone of each station."
+  },
+  "premises_intro": {
+   "scope": "global",
+   "render": "text",
+   "title": "",
+   "body": "{note_n_on_premises} The heat map shows every on-permise alochol sales licence in the city; the panel ranks stations by how many fall inside their buffer. In the regression this was used as a control variable at the destination only, as it was  assumed people are more likely to cycle to a night out than to cycle home from one."
   },
   "census_kpi": {
    "file": "census_summary.json",
@@ -301,8 +310,7 @@
    ],
    "render": "kpi",
    "show_if": {
-    "station": false,
-    "nbhd_mode": "buffers"
+    "station": false
    },
    "title": "{census_var}, {buffer} buffer",
    "items": [
@@ -340,8 +348,7 @@
    "render": "bar",
    "orientation": "horizontal",
    "show_if": {
-    "station": false,
-    "nbhd_mode": "buffers"
+    "station": false
    },
    "title": "Highest: {census_var}",
    "label_key": "station",
@@ -360,8 +367,7 @@
    "render": "bar",
    "orientation": "horizontal",
    "show_if": {
-    "station": false,
-    "nbhd_mode": "buffers"
+    "station": false
    },
    "title": "Lowest: {census_var}",
    "label_key": "station",
@@ -377,11 +383,10 @@
    ],
    "render": "kpi",
    "show_if": {
-    "station": false,
-    "nbhd_mode": "bars"
+    "station": false
    },
    "title": "Residents vs workplace population, {buffer} buffer",
-   "subtitle": "Summed over every station's buffer, so overlapping buffers count twice",
+   "subtitle": "Summed over every station's buffer",
    "items": [
     {
      "key": "residents",
@@ -393,7 +398,7 @@
      "key": "workplace",
      "label": "Workplace population",
      "dp": 0,
-     "colour": "#741e6d"
+     "colour": "#b04fa8"
     },
     {
      "key": "job_rich",
@@ -417,8 +422,7 @@
    "render": "bar",
    "orientation": "horizontal",
    "show_if": {
-    "station": false,
-    "nbhd_mode": "bars"
+    "station": false
    },
    "title": "Most job-rich stations",
    "subtitle": "Residents aged 16+ vs people working within the buffer",
@@ -433,7 +437,7 @@
     "b": {
      "key": "workplace",
      "label": "Workplace population",
-     "colour": "#741e6d"
+     "colour": "#b04fa8"
     }
    },
    "tip_keys": [
@@ -455,8 +459,7 @@
    "render": "bar",
    "orientation": "horizontal",
    "show_if": {
-    "station": false,
-    "nbhd_mode": "bars"
+    "station": false
    },
    "title": "Most residential stations",
    "label_key": "station",
@@ -470,7 +473,7 @@
     "b": {
      "key": "workplace",
      "label": "Workplace population",
-     "colour": "#741e6d"
+     "colour": "#b04fa8"
     }
    },
    "tip_keys": [
@@ -492,26 +495,30 @@
    "render": "bar",
    "orientation": "vertical",
    "show_if": {
-    "station": false,
-    "nbhd_mode": "bars"
+    "station": false
    },
    "title": "Jobs cluster tighter than homes",
-   "subtitle": "Median station uplift: how far workplace population exceeds residents 16+",
+   "subtitle": "Workplace uplift: how far workplace population exceeds residents 16+ at each buffer size",
    "x_key": "buffer",
    "x_suffix": " m",
-   "value_key": "median_pct",
    "unit": "%",
-   "colour": "#741e6d",
+   "series": [
+    {
+     "key": "aggregate_pct",
+     "label": "All stations pooled",
+     "colour": "#b04fa8"
+    },
+    {
+     "key": "median_pct",
+     "label": "Median station",
+     "colour": "#9e9e9e"
+    }
+   ],
+   "y_label": "uplift",
    "tip_keys": [
     {
      "key": "mean_pct",
      "label": "Mean station",
-     "dp": 0,
-     "unit": "%"
-    },
-    {
-     "key": "aggregate_pct",
-     "label": "All stations pooled",
      "dp": 0,
      "unit": "%"
     },
@@ -521,6 +528,84 @@
      "dp": 0
     }
    ]
+  },
+  "uplift_outperform": {
+   "file": "census_summary.json",
+   "scope": "global",
+   "path": [
+    "uplift",
+    "outperform",
+    "$buffer"
+   ],
+   "render": "bar",
+   "orientation": "horizontal",
+   "show_if": {
+    "station": false
+   },
+   "title": "Stations that beat the network uplift, {buffer} buffer",
+   "subtitle": "{n_above} of {n} stations have a larger workplace uplift than all stations pooled (dashed line, {benchmark_pct}%); top 15 shown",
+   "label_key": "station",
+   "value_key": "uplift_pct",
+   "ref_key": "benchmark_pct",
+   "unit": "%",
+   "colour": "#b04fa8",
+   "tip_keys": [
+    {
+     "key": "ratio",
+     "label": "Workers per resident",
+     "dp": 1,
+     "unit": "x"
+    },
+    {
+     "key": "vs_benchmark_pp",
+     "label": "Above the network",
+     "dp": 0,
+     "unit": " pp"
+    },
+    {
+     "key": "residents",
+     "label": "Residents 16+",
+     "dp": 0
+    },
+    {
+     "key": "workplace",
+     "label": "Workplace population",
+     "dp": 0
+    }
+   ]
+  },
+  "station_uplift": {
+   "file": "census_summary.json",
+   "scope": "global",
+   "path": [
+    "uplift",
+    "by_station",
+    "$station"
+   ],
+   "render": "bar",
+   "orientation": "vertical",
+   "show_if": {
+    "station": true
+   },
+   "title": "Workplace uplift vs the network",
+   "subtitle": "How far this station's workplace population exceeds its residents 16+, beside all stations pooled",
+   "x_key": "buffer",
+   "x_suffix": " m",
+   "marker": "buffer",
+   "unit": "%",
+   "series": [
+    {
+     "key": "station_pct",
+     "label": "This station",
+     "colour": "#c49a00"
+    },
+    {
+     "key": "network_pct",
+     "label": "All stations pooled",
+     "colour": "#b04fa8"
+    }
+   ],
+   "y_label": "uplift"
   },
   "uplift_movers": {
    "file": "census_summary.json",
@@ -532,8 +617,7 @@
    "render": "bar",
    "orientation": "horizontal",
    "show_if": {
-    "station": false,
-    "nbhd_mode": "bars"
+    "station": false
    },
    "title": "Stations that change most as the buffer widens",
    "subtitle": "Change in workplace share of population, 150 m to 500 m buffer",
@@ -542,7 +626,7 @@
    "unit": "pp",
    "colour_key": "dir",
    "colour_map": {
-    "more job-rich": "#741e6d",
+    "more job-rich": "#b04fa8",
     "more residential": "#5eb135"
    },
    "tip_keys": [
@@ -573,11 +657,89 @@
     "field": "vars"
    }
   },
+  "premises_kpi": {
+   "file": "census_summary.json",
+   "scope": "global",
+   "path": [
+    "rank",
+    "n_on_premises",
+    "$buffer"
+   ],
+   "render": "kpi",
+   "show_if": {
+    "station": false
+   },
+   "title": "Licensed premises per station, {buffer} buffer",
+   "items": [
+    {
+     "key": "median",
+     "label": "Median station",
+     "dp": 0
+    },
+    {
+     "key": "mean",
+     "label": "Mean",
+     "dp": 1
+    },
+    {
+     "key": "min",
+     "label": "Fewest",
+     "dp": 0
+    },
+    {
+     "key": "max",
+     "label": "Most",
+     "dp": 0
+    }
+   ]
+  },
+  "premises_top": {
+   "file": "census_summary.json",
+   "scope": "global",
+   "path": [
+    "rank",
+    "n_on_premises",
+    "$buffer",
+    "top"
+   ],
+   "render": "bar",
+   "orientation": "horizontal",
+   "show_if": {
+    "station": false
+   },
+   "title": "Most licensed premises within {buffer}",
+   "label_key": "station",
+   "value_key": "value",
+   "colour": "#fd8d3c"
+  },
+  "premises_station": {
+   "file": "census_by_station.json",
+   "scope": "station",
+   "render": "kpi",
+   "path": [
+    "$buffer"
+   ],
+   "title": "Within the {buffer} buffer",
+   "items": [
+    {
+     "key": "n_on_premises",
+     "label": "Licensed premises (on-sales)",
+     "dp": 0,
+     "colour": "#fd8d3c"
+    },
+    {
+     "key": "premises_capacity",
+     "label": "Licensed capacity",
+     "dp": 0,
+     "colour": "#bd0026"
+    }
+   ]
+  },
   "infra_intro": {
    "scope": "global",
    "render": "text",
    "title": "Cycle infrastructure arrived while the system was running",
-   "body": "Glasgow City Council's open cycle-route network, dated segment by segment from scheme opening records; anything undated was already in place at the study start. Drag the slider or press play to watch routes and docking stations appear. The regression uses each station pair's exposure to this network, so a route that gained a segregated lane part-way through the study changes exposure for every trip after that date."
+   "body": "The map shows Glasgow's cycle-route network. In the study I dated each segment that was opened during the data collection period. Dragging the slider or pressing play shows how the network grew over the collection period. The regression includes exposure to the network, so a route that gained a segregated lane part-way through the study changed exposure for every trip after that date."
   },
   "infra_km_timeline": {
    "file": "infra_timeline.json",
@@ -662,55 +824,149 @@
    ]
   },
   "corridors_intro": {
-   "file": "corridor_network.json",
+   "file": "kmeans.json",
    "scope": "global",
+   "field": "clusters.commuter",
    "render": "text",
-   "show_if": {
-    "station": false
+   "title": "Finding commuter corridors",
+   "body": "The data included no trip purpose, so commuter corridors were found with k-means clustering (k = 2). Every station pair with more than 30 trips before COVID-19 (20 March 2020) was described by three features: <b>peak share</b> (share of weekday trips in the 07:00-10:00 and 16:00-19:00 peaks), the <b>weekday : weekend ratio</b> (logged) and <b>reversal</b> (does the main direction flip between morning and evening; 0 = never, 2 = completely). {n} of {summary.kmeans_pairs} pairs landed in the cluster with the higher value on all three, the commuter corridors. Switch metrics on and off to see the clusters from each angle; click a point, lasso a group or drag the range sliders to pick pairs and see their routes on the map. Pairs below the 30-trip threshold count as non-commuter in the regression."
+  },
+  "kmeans_scatter": {
+   "file": "kmeans.json",
+   "scope": "global",
+   "field": "rows",
+   "render": "scatter",
+   "metrics_from": "metrics",
+   "label_keys": [
+    "a",
+    "b"
+   ],
+   "colour_key": "c",
+   "colour_map": {
+    "1": "#b04fa8",
+    "0": "#28a197"
    },
-   "title": "Commuter and non-commuter corridors",
-   "body": "A k-means clustering of each station pair's pre-COVID timing (peak share, weekday to weekend ratio, direction reversal, midday share) separated commuter corridors from everything else. {commuter_pct}% of all trips run on commuter corridors. Pairs with too few trips to classify are counted as non-commuter, as in the regression. Street width shows how many trips' shortest bike route used that street; click a station for its own corridors."
+   "colour_labels": {
+    "1": "Commuter",
+    "0": "Non-commuter"
+   },
+   "select": "pairs",
+   "tip_keys": [
+    {
+     "key": "trips",
+     "label": "Trips (all time, both ways)",
+     "dp": 0
+    },
+    {
+     "key": "pre",
+     "label": "Trips before COVID-19",
+     "dp": 0
+    }
+   ]
+  },
+  "kmeans_profile": {
+   "file": "kmeans.json",
+   "scope": "global",
+   "field": "profile",
+   "render": "bar",
+   "orientation": "vertical",
+   "title": "Cluster means",
+   "subtitle": "Mean of each feature in the two clusters (weekday : weekend ratio logged)",
+   "dp": 2,
+   "x_key": "metric",
+   "series": [
+    {
+     "key": "noncommuter",
+     "label": "Non-commuter",
+     "colour": "#28a197"
+    },
+    {
+     "key": "commuter",
+     "label": "Commuter",
+     "colour": "#b04fa8"
+    }
+   ],
+   "tip_keys": [
+    {
+     "key": "n_c",
+     "label": "Commuter pairs",
+     "dp": 0
+    },
+    {
+     "key": "n_n",
+     "label": "Non-commuter pairs",
+     "dp": 0
+    }
+   ]
+  },
+  "kmeans_selection": {
+   "render": "table",
+   "scope": "global",
+   "rows_from_state": "pairs",
+   "title": "",
+   "empty": "Click a point, lasso a group of points (2D) or drag the range sliders (3D) to list pairs here.",
+   "limit": 60,
+   "sort_key": "trips",
+   "columns": [
+    {
+     "key": "pair",
+     "label": "Station pair"
+    },
+    {
+     "key": "c",
+     "label": "Cluster",
+     "map": {
+      "1": "commuter",
+      "0": "non-commuter"
+     }
+    },
+    {
+     "key": "trips",
+     "label": "Trips",
+     "dp": 0
+    },
+    {
+     "key": "peak",
+     "label": "Peak",
+     "dp": 2
+    },
+    {
+     "key": "wk",
+     "label": "Wkday:wkend",
+     "dp": 2
+    },
+    {
+     "key": "rev",
+     "label": "Reversal",
+     "dp": 2
+    }
+   ]
   },
   "corridor_network_kpi": {
    "file": "corridor_network.json",
    "scope": "global",
    "render": "kpi",
-   "show_if": {
-    "station": false
-   },
-   "title": "Corridors across the network",
-   "subtitle": "k-means label of each station pair (pre-COVID, pairs with 30+ trips)",
+   "title": "Commuter corridors across the network",
+   "subtitle": "Directed station pairs, all trips 2017-2024; unlabelled pairs count as non-commuter",
    "items": [
     {
      "key": "commuter_pct",
      "label": "Trips on commuter corridors",
      "unit": "%",
      "dp": 1,
-     "colour": "#741e6d"
+     "colour": "#b04fa8"
     },
     {
      "key": "noncommuter_pct",
-     "label": "Trips on non-commuter corridors",
+     "label": "Trips on non-commuter pairs",
      "unit": "%",
      "dp": 1,
      "colour": "#28a197"
     },
     {
      "key": "commuter_pairs",
-     "label": "Commuter pairs",
+     "label": "Commuter pairs (directed)",
      "dp": 0
-    },
-    {
-     "key": "noncommuter_pairs",
-     "label": "Non-commuter pairs",
-     "dp": 0
-    },
-    {
-     "key": "exp_any_pct",
-     "label": "Route km on cycle infrastructure",
-     "unit": "%",
-     "dp": 1,
-     "colour": "#5eb135"
     },
     {
      "key": "classified_pct",
@@ -720,117 +976,13 @@
     }
    ]
   },
-  "commuter_kpi": {
-   "file": "context_by_station.json",
-   "scope": "station",
-   "render": "kpi",
-   "title": "Commuter character",
-   "items": [
-    {
-     "key": "commuter_pct",
-     "label": "Trips on commuter corridors",
-     "unit": "%",
-     "dp": 1,
-     "colour": "#741e6d"
-    },
-    {
-     "key": "commuter_pairs",
-     "label": "Commuter partners",
-     "dp": 0
-    },
-    {
-     "key": "exp_any",
-     "label": "Route on infrastructure",
-     "unit": "%",
-     "dp": 1,
-     "colour": "#5eb135"
-    },
-    {
-     "key": "classified_pct",
-     "label": "Trips on labelled pairs",
-     "unit": "%",
-     "dp": 1
-    }
-   ]
-  },
-  "corridor_top": {
-   "file": "context_by_station.json",
-   "scope": "station",
-   "field": "corridors",
-   "render": "bar",
-   "orientation": "horizontal",
-   "title": "Busiest corridors",
-   "subtitle": "Trips in both directions, coloured by k-means commuter label",
-   "label_key": "station",
-   "value_key": "trips",
-   "colour_key": "commuter",
-   "colour_map": {
-    "commuter": "#741e6d",
-    "non-commuter": "#28a197"
-   },
-   "map_lines": {
-    "role": "both",
-    "colour_key": "commuter",
-    "colour_map": {
-     "commuter": "#741e6d",
-     "non-commuter": "#28a197"
-    }
-   }
-  },
-  "corridor_exposure": {
-   "file": "context_by_station.json",
-   "scope": "station",
-   "field": "corridors",
-   "render": "bar",
-   "orientation": "horizontal",
-   "title": "Route on cycle infrastructure",
-   "subtitle": "% of each corridor's shortest bike route within 15 m of infrastructure",
-   "label_key": "station",
-   "value_key": "exp_any",
-   "unit": "%",
-   "max": 100,
-   "colour": "#5eb135"
-  },
-  "station_exposure": {
-   "file": "context_by_station.json",
-   "scope": "station",
-   "field": "exposure",
-   "render": "bar",
-   "orientation": "horizontal",
-   "title": "Infrastructure exposure, all trips",
-   "subtitle": "Trip-weighted share of route km by infrastructure type",
-   "unit": "%",
-   "max": 100,
-   "rows": [
-    {
-     "key": "segregated",
-     "label": "Segregated",
-     "colour": "#1a7032"
-    },
-    {
-     "key": "lane",
-     "label": "Cycle lane",
-     "colour": "#5eb135"
-    },
-    {
-     "key": "shared",
-     "label": "Shared path/footway",
-     "colour": "#28a197"
-    },
-    {
-     "key": "mixed",
-     "label": "Mixed traffic",
-     "colour": "#fdd522"
-    }
-   ]
-  },
   "regression_intro": {
    "file": "regression.json",
    "scope": "global",
    "field": "headline",
    "render": "text",
    "title": "Does cycle infrastructure attract bike-share trips?",
-   "body": "A negative-binomial gravity model of trips between every pair of stations ({n_pairs} pairs, offset for the days both were live). Distance and the destination's workplace population behave as gravity predicts. Segregated infrastructure on its own has a small, uncertain effect, but on commuter corridors the effect is large: a commuter pair whose whole route is segregated is predicted to carry {irr_full}x the trips of one with none (95% CI {irr_lo} to {irr_hi}). At the median commuter exposure that is a {irr_median}x uplift. The map shows the segregated segments and how many trips' routes followed them."
+   "body": "A negative-binomial gravity model of trips between every pair of stations ({n_pairs} pairs, offset for the days both were live). Distance and the destination's workplace population behave as gravity predicts. Segregated infrastructure on its own has a small, uncertain effect, but on commuter corridors the effect is large: a commuter pair whose whole route is segregated is predicted to carry {irr_full}x the trips of one with none (95% CI {irr_lo} to {irr_hi}). At the median commuter exposure that is a {irr_median}x uplift. The map below shows the segregated segments and how many trips' routes followed them."
   },
   "regression_headline": {
    "file": "regression.json",
@@ -844,14 +996,14 @@
      "label": "Commuter pair, fully segregated route: trip rate ratio",
      "dp": 2,
      "unit": "x",
-     "colour": "#741e6d"
+     "colour": "#b04fa8"
     },
     {
      "key": "irr_median",
      "label": "At median commuter exposure (10% of route)",
      "dp": 2,
      "unit": "x",
-     "colour": "#741e6d"
+     "colour": "#b04fa8"
     },
     {
      "key": "commuter_irr",
@@ -884,7 +1036,7 @@
     {
      "key": "commuter",
      "label": "Commuter pairs",
-     "colour": "#741e6d"
+     "colour": "#b04fa8"
     },
     {
      "key": "non_commuter",
@@ -908,7 +1060,7 @@
     "gravity": "#5e5e5e",
     "infrastructure": "#1a7032",
     "neighbourhood": "#0065bd",
-    "commuter": "#741e6d"
+    "commuter": "#b04fa8"
    },
    "intervals": [
     {
@@ -1027,9 +1179,11 @@
  "views": {
   "flows": {
    "title": "Station flows",
-   "phase": 1,
+   "number": "1",
+   "text": [
+    "flows_intro"
+   ],
    "layers": [
-    "flows_intro",
     "system_kpi",
     "system_hourly",
     "system_shift",
@@ -1046,7 +1200,6 @@
      "od_top_origins"
     ],
     "infra": "none",
-    "loads": "none",
     "heat": "none",
     "timeline": "hours",
     "stations": "sized",
@@ -1059,59 +1212,126 @@
     "lines",
     "stations"
    ],
-   "prompt": "Click a station on the map, or pick one from the list, to see its top destinations and origins, how they differ between weekdays and weekends, and its hourly origin/destination split.",
+   "prompt": "Click a station on the map, or pick one from the list, to see its top five destinations and origins, how they differ between weekdays and weekends, and its hourly origin/destination split.",
    "hint": "lines follow the shortest bike-network route; press play for a standard day"
   },
-  "neighbourhoods": {
-   "title": "Neighbourhoods",
-   "phase": 2,
+  "census": {
+   "group": "neighbourhoods",
+   "title": "Census variables",
+   "number": "2a",
+   "text": [
+    "census_intro"
+   ],
    "layers": [
-    "nbhd_intro",
     "census_kpi",
     "census_top",
     "census_bottom",
-    "balance_kpi",
-    "balance_top",
-    "balance_bottom",
-    "uplift_by_buffer",
-    "uplift_movers",
     "station_profile"
    ],
    "map": {
     "lines": [],
     "infra": "none",
-    "loads": "none",
-    "heat": "premises",
+    "heat": "none",
     "timeline": "none",
-    "stations": "$nbhd_mode",
+    "stations": "buffers",
     "select": true
    },
    "controls": [
-    "nbhd_mode",
     "census_var",
     "buffer"
    ],
    "legend": [
     "scale",
     "oa",
-    "heat",
     "stations"
    ],
    "prompt": "Click a station to see its buffer on the map and its full neighbourhood profile.",
-   "hint": "output-area colour = value of the selected variable; toggle the licensed-premises heat map in the legend"
+   "hint": "output-area colour = value of the selected variable"
+  },
+  "balance": {
+   "group": "neighbourhoods",
+   "title": "Workplace vs residential population",
+   "number": "2b",
+   "text": [
+    "balance_intro"
+   ],
+   "layers": [
+    "balance_kpi",
+    "uplift_by_buffer",
+    "uplift_outperform",
+    "balance_top",
+    "balance_bottom",
+    "uplift_movers",
+    "station_uplift"
+   ],
+   "map": {
+    "lines": [],
+    "infra": "none",
+    "heat": "none",
+    "timeline": "none",
+    "stations": "bars",
+    "select": true
+   },
+   "controls": [
+    "buffer"
+   ],
+   "legend": [
+    "scale"
+   ],
+   "prompt": "Click a station's columns to compare its workplace uplift with the network's.",
+   "hint": "column height = people in the buffer"
+  },
+  "premises": {
+   "group": "neighbourhoods",
+   "title": "Licensed premises",
+   "number": "2c",
+   "text": [
+    "premises_intro"
+   ],
+   "layers": [
+    "premises_kpi",
+    "premises_top",
+    "premises_station"
+   ],
+   "fixed": {
+    "census_var": "n_on_premises"
+   },
+   "show": {
+    "heat": true
+   },
+   "map": {
+    "lines": [],
+    "infra": "none",
+    "heat": "premises",
+    "timeline": "none",
+    "stations": "dots",
+    "ring": true,
+    "select": true
+   },
+   "controls": [
+    "buffer"
+   ],
+   "legend": [
+    "heat",
+    "stations"
+   ],
+   "prompt": "Click a station to count the licensed premises inside its buffer.",
+   "hint": "heat = on-sales licensed premises (Glasgow Licensing Board)"
   },
   "timeline": {
    "title": "Cycle infrastructure",
-   "phase": 3,
+   "number": "3",
+   "panel_title": "The network at the selected date",
+   "text": [
+    "infra_intro"
+   ],
    "layers": [
-    "infra_intro",
     "infra_state_kpi",
     "infra_km_timeline"
    ],
    "map": {
     "lines": [],
     "infra": "timeline",
-    "loads": "none",
     "heat": "none",
     "timeline": "dates",
     "stations": "dots",
@@ -1126,50 +1346,57 @@
   },
   "corridors": {
    "title": "Commuter corridors",
-   "phase": 4,
+   "number": "4",
+   "panel_title": "Selected station pairs",
+   "layout": "scatter",
+   "text": [
+    "corridors_intro"
+   ],
+   "scatter": "kmeans_scatter",
    "layers": [
-    "corridors_intro",
-    "corridor_network_kpi",
-    "commuter_kpi",
-    "corridor_top",
-    "corridor_exposure",
-    "station_exposure"
+    "kmeans_selection"
+   ],
+   "wide": [
+    "kmeans_profile",
+    "corridor_network_kpi"
    ],
    "map": {
-    "lines": [
-     "corridor_top"
-    ],
+    "lines": [],
     "infra": "none",
-    "loads": "corridor",
     "heat": "none",
     "timeline": "none",
     "stations": "dots",
-    "select": true
+    "pairs": "pairs",
+    "select": false
    },
    "controls": [],
    "legend": [
     "corridor",
     "stations"
    ],
-   "prompt": "Click a station to see its busiest corridors, their commuter label and how much of each route runs on cycle infrastructure.",
-   "hint": "street width = trips whose shortest bike route used that street"
+   "hint": "click a point, lasso a group or drag the sliders; click a row to highlight its route"
   },
   "regression": {
    "title": "Regression",
-   "phase": 5,
-   "layers": [
-    "regression_intro",
+   "number": "5",
+   "panel_title": "Trips on segregated infrastructure",
+   "text": [
+    "regression_intro"
+   ],
+   "wide_first": true,
+   "wide": [
     "regression_headline",
     "regression_irr",
     "regression_forest",
-    "regression_ladder",
+    "regression_ladder"
+   ],
+   "layers": [
     "segregated_kpi",
     "segregated_top"
    ],
    "map": {
     "lines": [],
     "infra": "segregated",
-    "loads": "none",
     "heat": "none",
     "timeline": "none",
     "stations": "dots",
@@ -1181,6 +1408,7 @@
    "legend": [
     "stations"
    ],
+   "map_title": "Where trips met segregated infrastructure",
    "hint": "click a segment for its trip counts; switch to commuter corridors in the legend"
   }
  },
@@ -1208,25 +1436,6 @@
     }
    ]
   },
-  "nbhd_mode": {
-   "label": "Show",
-   "state": "nbhd_mode",
-   "widget": "radio",
-   "hash": "mode",
-   "options": [
-    {
-     "value": "buffers",
-     "label": "Census map",
-     "colour": "#6497c7"
-    },
-    {
-     "value": "bars",
-     "label": "Residents vs workplace",
-     "colour": "#741e6d",
-     "fit": "all"
-    }
-   ]
-  },
   "census_var": {
    "label": "Variable",
    "state": "census_var",
@@ -1236,9 +1445,14 @@
     "file": "census_summary.json",
     "field": "vars"
    },
-   "show_if": {
-    "nbhd_mode": "buffers"
-   }
+   "exclude": [
+    "n_on_premises",
+    "premises_capacity",
+    "over16pop",
+    "workplace_pop",
+    "cycling_distance_share_ext",
+    "male_female_ratio"
+   ]
   },
   "buffer": {
    "label": "Buffer",
@@ -1274,7 +1488,7 @@
     {
      "value": "commuter",
      "label": "Commuter corridors only",
-     "colour": "#741e6d"
+     "colour": "#b04fa8"
     }
    ],
    "note": "line width = trips that followed the segment"
@@ -1292,7 +1506,7 @@
    "mixed": "#fdd522"
   },
   "corridor": {
-   "commuter": "#741e6d",
+   "commuter": "#b04fa8",
    "non-commuter": "#28a197"
   },
   "daytype": {
@@ -1306,13 +1520,14 @@
   },
   "balance": {
    "residents": "#5eb135",
-   "workplace": "#741e6d"
+   "workplace": "#b04fa8",
+   "median": "#9e9e9e"
   },
   "regression": {
    "gravity": "#5e5e5e",
    "infrastructure": "#1a7032",
    "neighbourhood": "#0065bd",
-   "commuter": "#741e6d"
+   "commuter": "#b04fa8"
   },
   "ui": {
    "accent": "#0065bd",
@@ -1320,7 +1535,14 @@
    "muted": "#5e5e5e",
    "station": "#002d54",
    "station_selected": "#fdd522",
-   "station_dim": "#b3b3b3"
+   "station_dim": "#b3b3b3",
+   "highlight": "#c49a00"
+  },
+  "basemap": {
+   "station": "#e6edf5",
+   "station_line": "#1b1f24",
+   "oa_line": "#30343b",
+   "bg": "#2b2d31"
   }
  },
  "summary": {
@@ -1331,11 +1553,71 @@
   "date_end": "2024-04-01",
   "infra_km": 352.14,
   "infra_segments": 964,
-  "commuter_pct": 22.4,
+  "commuter_pct": 21.8,
   "classified_pct": 71.9,
   "exp_any_pct": 28.9,
   "segregated_share_pct": 77.1,
   "router": "osmnx",
-  "routes": 2617
+  "routes": 3420,
+  "kmeans_pairs": 1385
+ },
+ "page": {
+  "title": "Glasgow Bike-Share Explorer",
+  "subtitle": "Commuter-specific effects of segregated cycle infrastructure on bike-share use in Glasgow · MSc Urban Analytics, University of Glasgow",
+  "intro": "[DRAFT] Between September 2017 and April 2024 Glasgow's nextbike bike-share system logged {summary.trips} trips between {summary.stations} docking stations. In my MSc dissertation I used the trip data to assess the effect of cycle infrastructure on bike-share usage and how the effect differs along commuter corridors. Every station pair was routed on the bike network and scored for its exposure to cycle infrastructure as the network grew, a k-means clustering picked out commuter corridors, and a negative-binomial gravity model estimated the effect. The headline: segregated lanes are associated with far more trips on commuter corridors, and those corridors are currently under-served. Scroll through the analysis below; every map and chart is interactive.",
+  "headline": [
+   {
+    "file": "manifest",
+    "key": "trips",
+    "label": "trips analysed",
+    "dp": 0
+   },
+   {
+    "file": "manifest",
+    "key": "stations",
+    "label": "docking stations",
+    "dp": 0
+   },
+   {
+    "file": "kmeans.json",
+    "path": [
+     "clusters",
+     "commuter",
+     "n"
+    ],
+    "label": "commuter corridors (station pairs)",
+    "dp": 0
+   },
+   {
+    "file": "regression.json",
+    "path": [
+     "headline",
+     "irr_full"
+    ],
+    "label": "trip rate on a fully segregated commuter route",
+    "dp": 2,
+    "unit": "x"
+   }
+  ],
+  "groups": {
+   "neighbourhoods": {
+    "title": "Surrounding Neighbourhood",
+    "number": "2",
+    "body": "[DRAFT] The surrounding characteristics of each station influence its usage. The following three maps display the station-level variables included within the regression model."
+   }
+  },
+  "notes": {
+   "avg_age": "the average age of residents within each buffer was calulcated using data from Scottish Census 2022 output areas.",
+   "avg_health_score": "average health was calculated using the Census self-reported health ratings these range from very bad (1) to very good (5); the buffer value is the mean response.",
+   "avg_cars_per_household": "the average number of cars or vans reported per household, (\"four or more\" was counted as four).",
+   "cycling_distance_share_ext": "share of commuters travelling 2 to 20 km to work. Under 2 km people were assumed to walk, and 20 km was taken as the furthest anyone would reasonably cycle to work.",
+   "avg_nssec_score": "the National Statistics Socio-economic Classification is scored from 1 (employers in large establishments) to 14 (never worked or long-term unemployed), with full-time students left out. The average score for each buffer zone was caculated - a lower average would suggest lower deprivation.",
+   "student_share": "full-time students as a share of the buffer's population. Studies have shown that students are a large proportion of bike-share users, so stations with a higher student share were expected to have more trips.",
+   "male_female_ratio": "male residents per female resident.",
+   "over16pop": "Residents aged 16+ count at both ends of a trip: someone who rides to work in the morning usually rides home to the station nearest where they live in the evening.",
+   "workplace_pop": "Workplace population (people who work in the buffer, wherever they live) counts only at the destination: the weekday morning peak pulls commuters into job-rich stations, but they disperse before heading home in the evening.",
+   "n_on_premises": "Premises licensed for alcohol to be drunk on site stand in for the night-time economy: concerts, theatres, sports and nights out. The count within the buffer entered the model at the destination only, since people may cycle out for the evening but are less likely to cycle home.",
+   "premises_capacity": "the summed licensed capacity of those premises."
+  }
  }
 }

@@ -28,10 +28,10 @@ CENSUS_VARS: dict[str, dict] = {
     "avg_health_score": {"label": "Health score", "unit": "", "dp": 2,
                          "desc": "Self-reported general health, 1 (very bad) to 5 (very good)"},
     "avg_nssec_score": {"label": "NS-SeC score", "unit": "", "dp": 1,
-                        "desc": "Socio-economic classification, 1 (higher managerial) to 15 (never worked)"},
+                        "desc": "Socio-economic classification, 1 (employers in large establishments) to 14 (never worked); students excluded"},
     "cycling_distance_share_ext": {"label": "Commutes in cycling range", "unit": "%", "dp": 1,
                                    "pct": True, "source": "cycling_distance_share_ext",
-                                   "desc": "Share of workers travelling under 10 km to work"},
+                                   "desc": "Share of commuters travelling 2 to 20 km to work"},
     "male_female_ratio": {"label": "Male : female ratio", "unit": "", "dp": 2,
                           "desc": "Male residents per female resident"},
     "over16pop": {"label": "Residents 16+", "unit": "", "dp": 0,
@@ -375,6 +375,80 @@ def buffer_uplift(
             "n": len(pcts),
         })
     return out
+
+
+def _uplift_pct(residents: float, workplace: float) -> float | None:
+    """``(workplace / residents - 1) * 100``, or None with no residents."""
+    return round((workplace / residents - 1) * 100, 1) if residents > 0 else None
+
+
+def uplift_outperformers(
+    table: dict[str, dict[int, dict[str, float | None]]],
+    buffer_m: int,
+    n: int = 15,
+) -> dict:
+    """Stations whose workplace uplift beats the whole network's, for one buffer.
+
+    The benchmark is the pooled uplift (every station's residents and workers
+    summed first), i.e. how much larger the workplace population is across all
+    stations taken together. It is robust to the few stations with almost no
+    residents, whose own uplift runs into the thousands of percent.
+
+    Returns:
+        ``{benchmark_pct, n_above, n, rows}``: ``rows`` are the top ``n``
+        stations above the benchmark, ``{station, uplift_pct, ratio, residents,
+        workplace, vs_benchmark_pp}``, largest uplift first.
+    """
+    rows = population_balance(table, buffer_m)
+    res = sum(r["residents"] for r in rows)
+    wp = sum(r["workplace"] for r in rows)
+    bench = _uplift_pct(res, wp)
+    out = []
+    for r in rows:
+        up = _uplift_pct(r["residents"], r["workplace"])
+        if up is None or bench is None or up <= bench:
+            continue
+        out.append({
+            "station": r["station"],
+            "uplift_pct": up,
+            "ratio": round(r["workplace"] / r["residents"], 1),
+            "residents": r["residents"],
+            "workplace": r["workplace"],
+            "vs_benchmark_pp": round(up - bench, 1),
+        })
+    out.sort(key=lambda r: (-r["uplift_pct"], r["station"]))
+    n_valid = sum(1 for r in rows if r["residents"] > 0)
+    return {"benchmark_pct": bench, "n_above": len(out), "n": n_valid, "rows": out[:n]}
+
+
+def station_uplift(
+    table: dict[str, dict[int, dict[str, float | None]]],
+    buffers: tuple[int, ...] = BUFFERS_M,
+) -> dict[str, list[dict]]:
+    """Each station's workplace uplift at every buffer beside the network's.
+
+    Returns:
+        ``{station: [{buffer, station_pct, network_pct}]}``, buffers ascending.
+        ``station_pct`` is None where the buffer has no residents.
+    """
+    network = {}
+    per_station: dict[str, dict[int, float | None]] = {}
+    for b in buffers:
+        rows = population_balance(table, b)
+        network[b] = _uplift_pct(
+            sum(r["residents"] for r in rows), sum(r["workplace"] for r in rows)
+        )
+        for r in rows:
+            per_station.setdefault(r["station"], {})[b] = _uplift_pct(
+                r["residents"], r["workplace"]
+            )
+    return {
+        s: [
+            {"buffer": b, "station_pct": vals.get(b), "network_pct": network[b]}
+            for b in buffers
+        ]
+        for s, vals in sorted(per_station.items())
+    }
 
 
 def uplift_movers(

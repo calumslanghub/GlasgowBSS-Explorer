@@ -68,9 +68,14 @@ def write_manifest(
     views = layers_cfg.get("views", {})
     controls = resolve_colours(layers_cfg.get("controls", {}), colours)
     validate(layers, views, controls)
+    for name, view in views.items():
+        for lname in view.get("text", []) + view.get("wide", []) + [view.get("scatter")]:
+            if lname and lname not in layers:
+                raise KeyError(f"View {name!r} references unknown layer {lname!r}")
     payload = {
         "layers": layers, "views": views, "controls": controls,
         "colours": colours, "summary": summary,
+        "page": layers_cfg.get("page", {}),
     }
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
