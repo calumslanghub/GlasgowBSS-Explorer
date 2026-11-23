@@ -23,7 +23,7 @@
 var STATE = {
   date: null,           // timeline date (ISO) — cycle infrastructure
   hour: null,           // standard-day hour (6-23) — station flows; null = all-day
-  daytype: 'all',       // 'all' | 'weekday' | 'weekend'
+  daytype: 'weekday',   // 'weekday' | 'weekend' (no all-days view: the two profiles differ too much)
   census_var: 'avg_age',// choropleth variable
   buffer: '250',        // buffer radius (m)
   seg_mode: 'all'       // 'all' | 'commuter' — segregated usage map
@@ -31,7 +31,7 @@ var STATE = {
 var DEFAULT_SHOW = {
   origin: true, destination: true, stations: true, heat: false, oa: true,
   infra: { segregated: true, lane: true, shared: true, mixed: true },
-  corridor: { commuter: true, 'non-commuter': true }
+  corridor: { commuter: true, 'non-commuter': false }   // one cluster at a time
 };
 var LOCAL_KEYS = { station: 1, show: 1, pairs: 1, focusPair: 1 };
 
@@ -270,6 +270,12 @@ function setPairs(rows, fromStation) {
   S.pairs = rows || [];
   S.focusPair = null;
   if (!fromStation && S.station) { S.station = null; secEl('station-select').value = ''; }
+  // The corridor map shows one cluster at a time; if the selection holds
+  // none of the visible cluster, switch to the one it does hold.
+  if (S.show.corridor && S.pairs.length) {
+    var vis = S.show.corridor.commuter ? 1 : 0;
+    if (!S.pairs.some(function (r) { return (r.c ? 1 : 0) === vis; })) showCorridor(vis ? 'non-commuter' : 'commuter');
+  }
   if (SEC.scatter && SEC.scatter.highlight) SEC.scatter.highlight(S.pairs);
   renderPanels();
   updateMap();
