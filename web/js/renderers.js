@@ -209,7 +209,7 @@ RENDERERS.bar = function (container, data, meta, state) {
     var valueKey = meta.rows ? 'value' : meta.value_key;
     var cols = rows.map(function (r) { return rowColour(r, meta); });
     datasets = [{
-      label: meta.title, data: rows.map(function (r) { return r[valueKey]; }),
+      label: fmtTitle(meta.title, state, data), data: rows.map(function (r) { return r[valueKey]; }),
       backgroundColor: cols.map(function (x) { return hexAlpha(x, 0.85); }), borderColor: cols, borderWidth: 1,
       borderRadius: 2, maxBarThickness: 18
     }];
@@ -256,12 +256,32 @@ RENDERERS.bar = function (container, data, meta, state) {
            title: { display: !horizontal && !!meta.y_label, text: meta.y_label } }
     }
   };
+  // A ranked list of stations: clicking a row (bar or label) selects that
+  // station exactly as a click on the map would. Native listeners, since
+  // Chart.js only reports clicks inside the plot area, not on the labels.
+  var pickable = horizontal && labelKey === 'station' && SEC && canSelect();
+  if (pickable) {
+    opts.plugins.tooltip.callbacks.footer = function () { return 'Click to show on the map'; };
+    opts.plugins.tooltip.footerFont = { weight: 'normal', style: 'italic' };
+  }
   var plugins = [pointsPlugin];
   if (meta.marker) plugins.push(markerPlugin);
   var ref = meta.ref_key ? (data || {})[meta.ref_key] : meta.ref_line;
   if (ref !== undefined && ref !== null) plugins.push(refLinePlugin);
   var chart = new Chart(canvas.getContext('2d'), { type: 'bar', data: { labels: labels, datasets: datasets }, options: opts, plugins: plugins });
   chart.$rows = rows;
+  if (pickable) {
+    var pick = bindSec(function (id) { selectStation(id); });
+    var rowAt = function (e) {
+      var ys = chart.scales.y;
+      if (!ys || e.offsetY < ys.top || e.offsetY > ys.bottom) return -1;
+      var i = Math.round(ys.getValueForPixel(e.offsetY));
+      return i >= 0 && i < rows.length ? i : -1;
+    };
+    // Deferred: selecting re-renders the panel, which destroys this chart.
+    canvas.addEventListener('click', function (e) { var i = rowAt(e); if (i >= 0) setTimeout(function () { pick(rows[i].station); }, 0); });
+    canvas.addEventListener('mousemove', function (e) { canvas.style.cursor = rowAt(e) >= 0 ? 'pointer' : ''; });
+  }
   if (ref !== undefined && ref !== null) { chart.$refValue = ref; chart.$refAxis = horizontal ? 'x' : 'y'; }
   if (legendItems) c.body.appendChild(swatchLegend(legendItems));
   var lg = categoryLegend(meta);

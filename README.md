@@ -11,10 +11,10 @@ One scrolling page that follows the dissertation:
 
 | Section | Content |
 |---|---|
-| 1 Station flows | Stations sized by trips. Click one for its top 5 destinations and origins (all days, weekdays or weekends), weekday-vs-weekend dumbbells, routes along the shortest bike-network path and the hourly origin/destination split. Press play for a standard day. |
-| 2 Neighbourhoods | 2a census variables on the output areas (with the station buffer the regression averaged), 2b residents vs workplace population, 2c a heat map of on-sales licensed premises. |
+| 1 Station flows | Stations sized by trips. Click one (on the map or in a chart) for its top 5 destinations and origins on weekdays or weekends, routes along the shortest bike-network path and the hourly origin/destination split. Press play for an average weekday or weekend day. |
+| 2 Neighbourhoods | 2a census variables on the output areas (with the station buffer the regression averaged), 2b residents vs workplace population (click a station for its two totals), 2c a heat map of on-sales licensed premises that turns into individual points at street zoom. |
 | 3 Cycle infrastructure | A date slider that reveals infrastructure as it opened, and stations as they recorded their first trip. |
-| 4 Commuter corridors | The k-means clustering: switch between one, two or three of its metrics (strip, 2D or 3D plot), pick pairs by clicking, lassoing or range sliders, and see their routes on the map and listed below. |
+| 4 Commuter corridors | The k-means clustering: switch between one, two or three of its metrics (strip, 2D or 3D plot), pick pairs by clicking, lassoing or range sliders, and see their routes on the map (one cluster at a time) and listed below. |
 | 5 Regression | The negative-binomial gravity model's headline rate ratios, IRR curve, coefficient plot and model ladder, then a map of how many trips followed each segregated segment. |
 
 ## How it is built

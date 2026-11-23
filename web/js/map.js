@@ -15,6 +15,8 @@ var MAP = null;         // the active section's map state (set by inSec)
 var DOT_RADIUS = 5;
 var SMALL_RADIUS = 3.5;
 var BAR_MAX_PX = 64;
+// Zoom at which the scale bar reads 200 m; premises points appear from here.
+var PREMISES_ZOOM = 15.75;
 
 function newMapState() {
   return {
@@ -25,6 +27,7 @@ function newMapState() {
     bufferLayer: null,  // the selected station's census buffer / ring
     barLayer: null,     // residents vs workplace columns
     heatLayer: null,    // licensed premises heat map
+    premisesLayer: null,// individual premises, shown when zoomed in
     oaLayer: null,      // census output-area choropleth (built once, restyled)
     infraFeatures: [],  // cached leaflet layers from infra.geojson
     segFeatures: [],    // cached leaflet layers from segregated.geojson
@@ -71,6 +74,10 @@ function initMap(container) {
   if (m.stations === 'buffers') buildOALayer();
   if (m.infra === 'timeline' || m.infra === 'all') buildInfraLayer();
   if (m.infra === 'segregated') buildSegregatedLayer();
+  if (m.heat === 'premises') {
+    MAP.premisesLayer = L.layerGroup();
+    MAP.map.on('zoomend', bindSec(drawPremisesPoints));
+  }
   // Clicking empty map deselects; feature clicks stop propagation.
   // (The corridor map keeps its pair selection: the same click also switches
   // on wheel zoom, and clearing on it made the selection feel random.)
@@ -345,6 +352,36 @@ function drawHeat() {
   if (MAP.heatLayer._canvas) MAP.map.getPane('heat').appendChild(MAP.heatLayer._canvas);
 }
 
+// Individual premises as small dots once the map is zoomed in to street level
+// (the 200 m scale bar), where the heat map stops being readable. Premises
+// inside the selected station's buffer are drawn brighter.
+function drawPremisesPoints() {
+  var lyr = MAP.premisesLayer;
+  if (!lyr) return;
+  lyr.clearLayers();
+  var p = DATA.files['premises.json'];
+  if (!p || MAP.map.getZoom() < PREMISES_ZOOM) { MAP.map.removeLayer(lyr); return; }
+  var s = S.station ? stationById(S.station) : null;
+  var here = s ? L.latLng(s.lat, s.lon) : null;
+  p.points.forEach(function (q) {
+    var ll = L.latLng(q[0], q[1]);
+    var inside = here && here.distanceTo(ll) <= +S.buffer;
+    L.circleMarker(ll, {
+      radius: inside ? 4 : 3, weight: 1, color: '#1a1a1a',
+      fillColor: inside ? '#ffeda0' : '#fd8d3c', fillOpacity: inside ? 1 : 0.85
+    }).bindTooltip(q[2] ? 'Licensed capacity ' + fmtNum(q[2]) : 'Licensed premises', { direction: 'top' })
+      .on('click', L.DomEvent.stopPropagation).addTo(lyr);
+  });
+  if (!MAP.map.hasLayer(lyr)) lyr.addTo(MAP.map);
+  Object.keys(MAP.markers).forEach(function (id) { if (MAP.markers[id]._map) MAP.markers[id].bringToFront(); });
+}
+
+// Show one k-means cluster on the corridor map (the other is hidden).
+function showCorridor(c) {
+  Object.keys(S.show.corridor).forEach(function (k) { S.show.corridor[k] = k === c; });
+  drawLines(); drawLegend();
+}
+
 // ── Route lines ───────────────────────────────────────────────────────────────
 // Selected station: each layer in view.map.lines has a `map_lines` spec; its
 // rows (cut to the layer's `head`, as the chart is) are partner stations and
@@ -559,8 +596,8 @@ function drawLegend() {
     } else if (group === 'corridor') {
       g.appendChild(el('span', 'lg-title', 'Pairs'));
       Object.keys(cols.corridor).forEach(function (c) {
-        g.appendChild(legendItem('<i style="background:' + cols.corridor[c] + '"></i>' + c, S.show.corridor[c],
-          function () { S.show.corridor[c] = !S.show.corridor[c]; drawLines(); drawLegend(); }));
+        g.appendChild(legendItem('<i class="dot" style="background:' + cols.corridor[c] + '"></i>' + c, S.show.corridor[c],
+          function () { showCorridor(c); }, true));
       });
       g.appendChild(el('span', 'lg-note', S.pairs && S.pairs.length ? fmtNum(S.pairs.length) + ' selected · width = trips' : 'all clustered pairs · width = trips'));
     } else if (group === 'scale') {
@@ -619,6 +656,11 @@ function focusStation(id) {
   if (!m) return;
   // The columns only read city-wide: highlight the station, keep the frame.
   if (stationMode() === 'bars') return;
+  // Premises map: zoom to street level (200 m scale) so the points show.
+  if (currentView().map.heat === 'premises') {
+    MAP.map.setView(m.getLatLng(), Math.max(MAP.map.getZoom(), 16), { animate: true });
+    return;
+  }
   var b = L.latLngBounds([m.getLatLng()]);
   MAP.lineLayer.eachLayer(function (l) { b.extend(l.getBounds()); });
   MAP.bufferLayer.eachLayer(function (l) { b.extend(l.getBounds()); });
@@ -628,6 +670,7 @@ function focusStation(id) {
 function updateMap() {
   if (!MAP) return;
   drawHeat();
+  drawPremisesPoints();
   drawInfra();
   drawOverlays();
   drawLines();

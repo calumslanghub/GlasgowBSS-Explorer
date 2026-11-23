@@ -21,16 +21,15 @@ var TL_MODES = {
     values: function () { var h = []; for (var i = 6; i <= 23; i++) h.push(i); return h; },
     label: function (v) {
       var day = controlLabel('daytype', S);
-      return v === null ? 'Standard day · ' + day : (v < 10 ? '0' : '') + v + ':00 · ' + day;
+      return v === null ? 'Average day · ' + day : (v < 10 ? '0' : '') + v + ':00 · ' + day;
     },
     apply: function (v) { S.hour = v; },
     initial: function () { return 0; },
     interval: 700,
     hint: function (v) {
-      var base = 'Press play to watch a standard ' + dayNoun() + ' (switch All days / Weekdays / Weekends in the legend, even while it plays). ' +
-        'Marker size = trips per day to or from the station in that hour; colour: <span class="hint-scale"></span> mostly ending here (red) to mostly starting here (blue).';
+      var base = 'Size = trips in that hour; colour: <span class="hint-scale"></span> mostly ending (red) to mostly starting (blue) here.';
       if (v === null || v === undefined) return base;
-      return '<b>' + fmtNum(networkHourRate(v)) + ' trips started across the network per ' + dayNoun() + ' in this hour.</b> ' + base;
+      return '<b>' + fmtNum(networkHourRate(v)) + ' trips started across the network in this hour.</b> ' + base;
     },
     resettable: true
   }
